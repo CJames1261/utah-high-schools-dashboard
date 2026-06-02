@@ -1,0 +1,22 @@
+# --- RStudio / R session state -----------------------------------------------
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# --- renv: keep activate.R, settings.json and renv.lock; ignore local cache --
+renv/library/
+renv/local/
+renv/cellar/
+renv/staging/
+renv/sandbox/
+renv/python/
+
+# --- Claude Code workspace (transcripts, memory, etc.) -----------------------
+.claude/
+
+# --- OS / editor cruft -------------------------------------------------------
+.DS_Store
+Thumbs.db
+*~
+*.swp
