@@ -1,6 +1,8 @@
 # Utah Public High Schools Dashboard
 
-An interactive R Shiny app that maps and ranks the **219 public high schools across all 87 Utah districts** using data from *U.S. News Best High Schools 2025-2026*. Click a district polygon or a school marker to drill into rankings, AP participation, proficiency scores, and graduation rates — averages recalculate live as you filter.
+An interactive R Shiny app that maps and ranks **219 public high schools across all 41 Utah school districts and 46 charter schools** using data from *U.S. News Best High Schools 2025-2026*. Click a district polygon or a school marker to drill into rankings, AP participation, proficiency scores, and graduation rates — averages recalculate live as you filter.
+
+> **A note on "districts":** U.S. News lists 87 distinct entities for Utah because each charter school is treated as its own LEA. Utah only has **41 actual school districts** (geographic); the remaining 46 are charter schools that show up as 1-school "districts" in the source data. The app surfaces this split in the header so the numbers don't mislead.
 
 ![App](https://img.shields.io/badge/R-Shiny-1f78b4) ![Map](https://img.shields.io/badge/Map-Leaflet-3cb371) ![Data](https://img.shields.io/badge/Schools-219-orange)
 

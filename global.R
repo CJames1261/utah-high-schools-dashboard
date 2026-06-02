@@ -15,6 +15,16 @@ library(readr)
 library(tigris)
 library(sf)
 
+# UI / theming
+library(bslib)
+library(bsicons)
+library(shinyjs)
+
+# Compare tab
+library(ggplot2)
+library(plotly)
+library(DT)
+
 # tigris caches downloaded shapefiles so the Utah district polygons are only
 # fetched from the Census on first run (~30 sec). Subsequent runs are instant.
 options(tigris_use_cache = TRUE)
@@ -37,8 +47,17 @@ geo <- geo_csv %>%
 
 schools <- schools_json %>% left_join(geo, by = "address")
 
-message(sprintf("Loaded %d schools (%d districts). %d without coordinates.",
-                nrow(schools), length(unique(schools$district)),
+# Breakdown of "districts" in the U.S. News data:
+#   - 41 are real Utah school districts (label ends in "District").
+#   - The rest are charter schools that U.S. News treats as their own LEA, so
+#     each charter appears as a 1-school "district" with the charter's name.
+#   We surface both counts so the header doesn't mislead.
+all_districts_n <- length(unique(schools$district))
+n_traditional   <- sum(grepl("District$", unique(schools$district)))
+n_charters      <- all_districts_n - n_traditional
+
+message(sprintf("Loaded %d schools (%d districts + %d charters = %d total LEAs). %d without coordinates.",
+                nrow(schools), n_traditional, n_charters, all_districts_n,
                 sum(is.na(schools$latitude))))
 
 # ---- District boundary polygons (Census TIGER) -------------------------------
@@ -230,3 +249,19 @@ UTAH_BBOX <- list(lng1 = -114.05, lat1 = 37.00,
 
 # Null-coalescing helper used by the debug loggers in server.R.
 `%||%` <- function(a, b) if (is.null(a)) b else a
+
+# ---- Comparable metrics (Compare Schools tab) --------------------------------
+# Each entry: column name -> display label (and whether higher is better).
+compare_metrics <- list(
+  overall_score        = list(label = "Overall Score",         unit = "/100", higher_better = TRUE),
+  state_rank           = list(label = "Utah Ranking",           unit = "",     higher_better = FALSE),
+  national_rank        = list(label = "National Ranking",       unit = "",     higher_better = FALSE),
+  ap_taken_pct         = list(label = "AP Exam Participation",  unit = "%",    higher_better = TRUE),
+  ap_passed_pct        = list(label = "AP Exam Pass Rate",      unit = "%",    higher_better = TRUE),
+  math_proficiency     = list(label = "Mathematics Proficiency",unit = "%",    higher_better = TRUE),
+  reading_proficiency  = list(label = "Reading Proficiency",    unit = "%",    higher_better = TRUE),
+  science_proficiency  = list(label = "Science Proficiency",    unit = "%",    higher_better = TRUE),
+  graduation_rate      = list(label = "Graduation Rate",        unit = "%",    higher_better = TRUE)
+)
+compare_metric_choices <- setNames(names(compare_metrics),
+                                   vapply(compare_metrics, `[[`, "", "label"))
