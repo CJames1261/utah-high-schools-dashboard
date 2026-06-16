@@ -386,8 +386,15 @@ function(input, output, session) {
     div(
       class       = paste("legend-item", if (is_active) "is-active" else ""),
       `data-district` = name,
+      tabindex    = "0",
+      role        = "button",
+      `aria-label` = sprintf("Filter map to %s", name),
       onclick     = sprintf(
         "Shiny.setInputValue('legend_pick', %s, {priority:'event'});",
+        jsonlite::toJSON(name, auto_unbox = TRUE)
+      ),
+      onkeydown   = sprintf(
+        "if(event.key==='Enter'||event.key===' '){event.preventDefault();Shiny.setInputValue('legend_pick', %s, {priority:'event'});}",
         jsonlite::toJSON(name, auto_unbox = TRUE)
       ),
       title       = sprintf("%s — %d school%s",
@@ -410,8 +417,15 @@ function(input, output, session) {
     div(
       class           = "legend-item legend-item-school",
       `data-school`   = name,
+      tabindex        = "0",
+      role            = "button",
+      `aria-label`    = sprintf("Show %s in %s", name, district),
       onclick         = sprintf(
         "Shiny.setInputValue('school_pick', %s, {priority:'event'});",
+        jsonlite::toJSON(name, auto_unbox = TRUE)
+      ),
+      onkeydown       = sprintf(
+        "if(event.key==='Enter'||event.key===' '){event.preventDefault();Shiny.setInputValue('school_pick', %s, {priority:'event'});}",
         jsonlite::toJSON(name, auto_unbox = TRUE)
       ),
       title           = sprintf("%s — %s", name, district),
@@ -694,6 +708,14 @@ function(input, output, session) {
     )
   })
 
+  # Size the chart container to the row count: ~24px per bar (floored at 420px)
+  # so 219 schools no longer crush into a 560px box with overlapping labels.
+  output$compare_chart_wrap <- renderUI({
+    n <- nrow(compare_data())
+    h <- max(420, 24 * n)
+    plotlyOutput("compare_chart", height = paste0(h, "px"))
+  })
+
   output$compare_chart <- renderPlotly({
     df <- compare_data()
     m  <- metric_meta()
@@ -730,7 +752,7 @@ function(input, output, session) {
                           font = list(family = "Inter", size = 11, color = "#475569")),
           gridcolor = "#eef2f6",
           zerolinecolor = "#e2e8f0",
-          tickfont = list(family = "Inter", size = 11, color = "#64748b")
+          tickfont = list(family = "Inter", size = 11, color = "#475569")
         ), extra),
         yaxis = list(
           title = "",
@@ -808,9 +830,11 @@ function(input, output, session) {
     log_evt("compare_table", sprintf("rerender  n=%d", nrow(df)))
 
     if (nrow(df) == 0) {
+      # Blank the column header (colnames = "") so the empty state reads as a
+      # message, not a table with a literal "Message" column header.
       return(DT::datatable(
-        data.frame(Message = "No schools match the current filter for this metric."),
-        rownames = FALSE, options = list(dom = "t", paging = FALSE)
+        data.frame(x = "No schools match the current filter for this metric."),
+        rownames = FALSE, colnames = "", options = list(dom = "t", paging = FALSE)
       ))
     }
 

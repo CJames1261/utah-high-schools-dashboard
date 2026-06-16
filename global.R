@@ -219,9 +219,9 @@ school_popup <- function(row) {
   HTML(paste0(
     "<div style='font-family:sans-serif; min-width:240px;'>",
       "<h4 style='margin:0 0 4px 0;'>", htmlEscape(row$school_name), "</h4>",
-      "<div style='color:#888; font-size:11px;'>", htmlEscape(row$district), "</div>",
-      "<div style='color:#555; margin:4px 0 8px 0;'>", htmlEscape(row$address), "</div>",
-      "<table style='font-size:12px; border-collapse:collapse;'>",
+      "<div style='color:#475569; font-size: 12px;'>", htmlEscape(row$district), "</div>",
+      "<div style='color:#334155; margin:4px 0 8px 0;'>", htmlEscape(row$address), "</div>",
+      "<table style='font-size: 13px; border-collapse:collapse;'>",
         "<tr><td><b>Overall Score</b></td><td>", fmt_score(row$overall_score), "</td></tr>",
         "<tr><td><b>Utah Rank</b></td><td>",     fmt_rank(row$state_rank),    "</td></tr>",
         "<tr><td><b>National Rank</b></td><td>", fmt_rank(row$national_rank), "</td></tr>",
@@ -269,11 +269,11 @@ district_hover_stat <- function(icon, label, value) {
 district_kpi_card <- function(name, avg) {
   if (is.null(avg)) {
     meta <- ""
-    body <- "<div style='grid-column:1/-1; padding:14px; color:#94a3b8; font-size:12px;'>No scorecard data for this district.</div>"
+    body <- "<div style='grid-column:1/-1; padding:14px; color:#64748b; font-size: 13px;'>No scorecard data for this district.</div>"
     foot <- ""
   } else {
     meta <- sprintf(
-      "<span class='data-year-pill'>%s%s</span><span class='district-hover-count'>Based on %d school%s</span>",
+      "<span class='data-year-pill'>%s%s</span><span class='district-hover-count'>Average of %d school%s</span>",
       hover_icons[["calendar3"]], DATA_YEAR,
       avg$n, if (avg$n == 1) "" else "s"
     )
@@ -307,7 +307,7 @@ district_kpi_card <- function(name, avg) {
   htmltools::HTML(sprintf(
     "<div class='district-hover-card' data-dh-district='%s'>
        <div class='district-hover-head'>
-         <div class='district-hover-title'>%s<span>%s</span></div>
+         <div class='district-hover-title'>%s<span class='district-hover-titletext'><span class='district-hover-name'>%s</span><span class='district-hover-sub'>Average scores</span></span></div>
          <div class='district-hover-meta'>%s</div>
        </div>
        <div class='district-hover-body'>%s</div>
