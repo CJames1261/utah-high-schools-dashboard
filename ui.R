@@ -213,102 +213,116 @@ button:focus-visible,
   line-height: 1.2;
 }
 
-/* -------- Tab navigation -------- */
+/* -------- Tab navigation — segmented control --------
+   Every tab is its own white pill on a light track; the selected tab is a
+   solid blue pill so the active view is obvious at a glance. */
 .navbar-nav {
   display: flex;
-  align-items: stretch;
-  gap: 2px;
-  height: 100%;
-  margin-left: 12px;
+  align-items: center;
+  gap: 5px;
+  align-self: center;
+  margin-left: 18px;
+  padding: 5px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
 }
-.navbar .nav-item { display: flex; align-items: stretch; }
+.navbar .nav-item { display: flex; align-items: center; }
 
 .navbar .nav-link {
   display: inline-flex !important;
   align-items: center;
   gap: 8px;
-  height: 100%;
-  padding: 0 16px !important;
+  padding: 7px 15px !important;
   font-size: 14px !important;
   font-weight: 600 !important;
   letter-spacing: -0.005em;
-  color: #475569 !important;
-  background: transparent !important;
+  color: var(--text-secondary) !important;
+  /* Inherent white pill on every tab. */
+  background: #ffffff !important;
   border: 0 !important;
-  border-radius: 0 !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-xs);
   position: relative;
-  transition: color 0.18s ease;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 /* Icons sit one shade muted, brighten on hover/active for hierarchy. */
 .navbar .nav-link svg {
   font-size: 15px;
   flex-shrink: 0;
-  color: #64748b;
-  transition: color 0.18s ease, transform 0.22s ease;
+  color: var(--text-tertiary);
+  transition: color 0.15s ease;
 }
 
-/* Animated bottom indicator (pseudo-element, scales horizontally). */
-.navbar .nav-link::after {
-  content: '';
-  position: absolute;
-  left: 14px; right: 14px; bottom: -1px;
-  height: 2px;
-  background: #2563eb;
-  border-radius: 2px 2px 0 0;
-  transform: scaleX(0);
-  transform-origin: center;
-  transition:
-    transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-    background 0.18s ease;
-}
+/* The pill background replaces the old underline indicator. */
+.navbar .nav-link::after { display: none !important; }
 
-/* Hover — partial indicator + soft icon lift */
+/* Hover (inactive) — soft blue tint hint */
 .navbar .nav-link:hover {
-  color: #2563eb !important;
+  color: var(--color-primary) !important;
+  background: var(--color-primary-tint) !important;
+  box-shadow: var(--shadow-sm);
 }
-.navbar .nav-link:hover svg {
-  color: inherit;
-  transform: translateY(-1px);
-}
-.navbar .nav-link:hover::after {
-  transform: scaleX(0.5);
-  background: rgba(37, 99, 235, 0.35);
-}
+.navbar .nav-link:hover svg { color: var(--color-primary); }
 
-/* Active — full indicator + matching icon */
+/* Selected — solid blue pill, white text + icon */
 .navbar .nav-link.active {
-  color: #2563eb !important;
+  color: #ffffff !important;
+  background: var(--color-primary) !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
 }
-.navbar .nav-link.active svg { color: inherit; }
-.navbar .nav-link.active::after {
-  transform: scaleX(1);
-  background: #2563eb;
+.navbar .nav-link.active svg { color: #ffffff; }
+.navbar .nav-link.active:hover {
+  color: #ffffff !important;
+  background: var(--color-primary-700) !important;
 }
+.navbar .nav-link.active:hover svg { color: #ffffff; }
 
-/* -------- Right-side stat pill -------- */
-.navbar-stat-pill {
+/* -------- Right-side stat cluster --------
+   A white card with a brand-accent icon and number/label stats separated by
+   hairline dividers — a compact, professional at-a-glance summary. */
+.navbar-stats {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 14px;
-  background: #f8fafc;
-  color: #475569;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-  border: 1px solid #e2e8f0;
-  font-variant-numeric: tabular-nums;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  gap: 14px;
+  padding: 6px 16px;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-xs);
   align-self: center;
 }
-.navbar-stat-pill:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
+.navbar-stats > svg {
+  font-size: 18px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  margin-right: 2px;
 }
-.navbar-stat-pill svg {
-  font-size: 13px;
-  color: #2563eb;
+.navbar-stat {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+.navbar-stat-num {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.navbar-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+.navbar-stat-sep {
+  width: 1px;
+  height: 26px;
+  background: var(--border-color);
   flex-shrink: 0;
 }
 
@@ -741,18 +755,14 @@ button:focus-visible,
   .brand-title { font-size: 14.5px; }
   .navbar .navbar-brand { margin-right: 16px; }
   .navbar .navbar-brand::after { right: -8px; height: 28px; }
-  .navbar-nav { margin-left: 4px; }
-  .navbar .nav-link { padding: 0 12px !important; }
-  .navbar .nav-link::after { left: 10px; right: 10px; }
+  .navbar-nav { margin-left: 8px; }
+  .navbar .nav-link { padding: 7px 11px !important; }
 }
 @media (max-width: 640px) {
   .navbar > .container-fluid { padding: 0 14px !important; }
-  .navbar-stat-pill { padding: 6px 10px; gap: 6px; }
+  .navbar-stats { gap: 10px; padding: 6px 12px; }
   /* Collapse to just the schools count on the smallest screens. */
-  .navbar-stat-pill > span:nth-of-type(2),
-  .navbar-stat-pill > span:nth-of-type(4),
-  .navbar-stat-pill > span:nth-of-type(5),
-  .navbar-stat-pill > span:nth-of-type(6) { display: none; }
+  .navbar-stat-extra { display: none; }
 }
 
 /* ===================== MAP TAB ===================== */
@@ -2717,13 +2727,22 @@ bslib::page_navbar(
     )
   ),
   bslib::nav_item(
-    div(class = "navbar-stat-pill",
-      bsicons::bs_icon("buildings"),
-      span(sprintf("%d schools", nrow(schools))),
-      tags$span("·", style = "opacity:.6"),
-      span(sprintf("%d districts", n_traditional)),
-      tags$span("·", style = "opacity:.6"),
-      span(sprintf("%d charters", n_charters))
+    div(class = "navbar-stats",
+      bsicons::bs_icon("buildings-fill"),
+      div(class = "navbar-stat",
+        span(class = "navbar-stat-num", nrow(schools)),
+        span(class = "navbar-stat-label", "Schools")
+      ),
+      div(class = "navbar-stat-sep navbar-stat-extra"),
+      div(class = "navbar-stat navbar-stat-extra",
+        span(class = "navbar-stat-num", n_traditional),
+        span(class = "navbar-stat-label", "Districts")
+      ),
+      div(class = "navbar-stat-sep navbar-stat-extra"),
+      div(class = "navbar-stat navbar-stat-extra",
+        span(class = "navbar-stat-num", n_charters),
+        span(class = "navbar-stat-label", "Charters")
+      )
     )
   )
 )
