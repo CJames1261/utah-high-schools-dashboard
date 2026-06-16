@@ -27,16 +27,24 @@ function(input, output, session) {
     df
   })
 
+  # When a school is picked from the legend search, the district filter is
+  # switched to that school's district — which would normally reset the School
+  # dropdown to "All schools". We stash the desired school here so the observer
+  # below re-selects it after repopulating the choices.
+  pending_school <- reactiveVal(NULL)
+
   # Keep the "School" dropdown in sync with the chosen district
   observeEvent(input$district, {
     log_evt("input$district", sprintf("changed -> %s", input$district))
     df <- schools
     if (input$district != "All districts") df <- df %>% filter(district == input$district)
+    sel <- pending_school()
     updateSelectInput(
       session, "school",
       choices  = c("All schools", sort(unique(df$school_name))),
-      selected = "All schools"
+      selected = if (!is.null(sel) && sel %in% df$school_name) sel else "All schools"
     )
+    if (!is.null(sel)) pending_school(NULL)
   })
 
   observeEvent(input$school, {
@@ -57,15 +65,9 @@ function(input, output, session) {
         label       = polygon_hover_labels,
         labelOptions = labelOptions(
           direction = "auto",
-          sticky    = FALSE,
+          sticky    = TRUE,           # follow the cursor across large polygons
           opacity   = 1,
-          style     = list(
-            "background-color" = "white",
-            "border"           = "1px solid #888",
-            "border-radius"    = "4px",
-            "padding"          = "6px 8px",
-            "box-shadow"       = "0 2px 6px rgba(0,0,0,0.18)"
-          )
+          className = "district-hover-tooltip"
         ),
         layerId     = ~usnews_district,
         group       = "districts",
@@ -136,7 +138,9 @@ function(input, output, session) {
     #   1. Single specific school selected -> zoom in tight on it.
     #   2. District selected AND has a polygon (the 41 traditional districts)
     #      -> fit the map to the polygon's bounding box.
-    #   3. Otherwise -> fit to the school coordinates with a small pad.
+    #   3. Nothing filtered (statewide view) -> fit to the Utah bounding box
+    #      so the state stays centred on initial load and on reset.
+    #   4. Otherwise (charter / unmapped district) -> fit to the school coords.
     if (input$school != "All schools" && nrow(df) == 1) {
       log_evt("auto-fit", sprintf("branch=school  zoom 14 on %s",
                                   df$school_name))
@@ -151,6 +155,13 @@ function(input, output, session) {
       proxy %>% fitBounds(
         as.numeric(bbox["xmin"]), as.numeric(bbox["ymin"]),
         as.numeric(bbox["xmax"]), as.numeric(bbox["ymax"])
+      )
+    } else if (input$district == "All districts" &&
+               input$school   == "All schools") {
+      log_evt("auto-fit", "branch=utah  centring on UTAH_BBOX")
+      proxy %>% fitBounds(
+        UTAH_BBOX$lng1, UTAH_BBOX$lat1,
+        UTAH_BBOX$lng2, UTAH_BBOX$lat2
       )
     } else {
       log_evt("auto-fit", sprintf("branch=schools  bbox=[%.3f,%.3f,%.3f,%.3f]",
@@ -318,8 +329,11 @@ function(input, output, session) {
           span(title)
         ),
         div(class = "kpi-panel-meta",
-          sprintf("Based on %d school%s",
-                  avg$n, if (avg$n == 1) "" else "s"))
+          span(class = "data-year-pill",
+               bsicons::bs_icon("calendar3"), DATA_YEAR),
+          span(sprintf("Based on %d school%s",
+                       avg$n, if (avg$n == 1) "" else "s"))
+        )
       ),
       div(class = "kpi-panel-body",
         kpi_stat("pencil-square",    "AP Taken",   fmt_avg(avg$ap_taken),   kpi_tooltips$ap_taken),
@@ -364,6 +378,198 @@ function(input, output, session) {
   })
 
   # =========================================================================
+  # DISTRICT LEGEND  (inside the floating control panel)
+  # =========================================================================
+  district_counts <- schools %>% count(district, name = "n_schools")
+
+  build_legend_item <- function(name, count, is_active) {
+    div(
+      class       = paste("legend-item", if (is_active) "is-active" else ""),
+      `data-district` = name,
+      onclick     = sprintf(
+        "Shiny.setInputValue('legend_pick', %s, {priority:'event'});",
+        jsonlite::toJSON(name, auto_unbox = TRUE)
+      ),
+      title       = sprintf("%s — %d school%s",
+                            name, count, if (count == 1) "" else "s"),
+      div(class = "legend-item-swatch",
+          style = sprintf("background:%s;", unname(district_pal(name)))),
+      div(class = "legend-item-text",
+        span(class = "legend-item-name", name),
+        span(class = "legend-item-meta",
+             sprintf("%d school%s", count, if (count == 1) "" else "s"))
+      ),
+      bsicons::bs_icon("chevron-right", class = "legend-item-arrow")
+    )
+  }
+
+  # A search-result row for an individual school (vs a district row above).
+  # Clicking it sets input$school_pick; the swatch uses the school's district
+  # color and the meta line shows which district it belongs to.
+  build_school_item <- function(name, district) {
+    div(
+      class           = "legend-item legend-item-school",
+      `data-school`   = name,
+      onclick         = sprintf(
+        "Shiny.setInputValue('school_pick', %s, {priority:'event'});",
+        jsonlite::toJSON(name, auto_unbox = TRUE)
+      ),
+      title           = sprintf("%s — %s", name, district),
+      div(class = "legend-item-swatch",
+          style = sprintf("background:%s;", unname(district_pal(district)))),
+      div(class = "legend-item-text",
+        span(class = "legend-item-name", name),
+        span(class = "legend-item-meta", district)
+      ),
+      bsicons::bs_icon("geo-alt", class = "legend-item-arrow")
+    )
+  }
+
+  output$district_legend <- renderUI({
+    query    <- tolower(input$legend_search %||% "")
+    selected <- input$district %||% "All districts"
+
+    trad_names    <- sort(unique(district_counts$district[
+                       grepl("District$", district_counts$district)]))
+    charter_names <- sort(unique(district_counts$district[
+                       !grepl("District$", district_counts$district)]))
+
+    # Individual schools surface only while searching, so the default view
+    # stays a clean district list rather than a 219-row scroll.
+    school_hits <- schools[0, c("school_name", "district")]
+    if (nzchar(query)) {
+      trad_names    <- trad_names[   grepl(query, tolower(trad_names),    fixed = TRUE)]
+      charter_names <- charter_names[grepl(query, tolower(charter_names), fixed = TRUE)]
+      sh <- schools[grepl(query, tolower(schools$school_name), fixed = TRUE), ]
+      school_hits <- sh[order(sh$school_name), c("school_name", "district")]
+    }
+
+    if (length(trad_names) == 0 && length(charter_names) == 0 &&
+        nrow(school_hits) == 0) {
+      return(div(class = "legend-empty",
+        bsicons::bs_icon("search"),
+        "No districts or schools match your search."
+      ))
+    }
+
+    n_for <- function(nm) district_counts$n_schools[district_counts$district == nm]
+
+    group <- function(label, names) {
+      if (length(names) == 0) return(NULL)
+      div(class = "legend-group",
+        div(class = "legend-group-head",
+          span(label),
+          span(class = "legend-group-count", length(names))
+        ),
+        div(class = "legend-group-body",
+          lapply(names, function(nm)
+            build_legend_item(nm, n_for(nm), is_active = (nm == selected)))
+        )
+      )
+    }
+
+    # Schools group (search results only), capped so the list stays usable.
+    school_group <- NULL
+    if (nrow(school_hits) > 0) {
+      cap   <- 50L
+      shown <- utils::head(school_hits, cap)
+      school_group <- div(class = "legend-group",
+        div(class = "legend-group-head",
+          span("Schools"),
+          span(class = "legend-group-count", nrow(school_hits))
+        ),
+        div(class = "legend-group-body",
+          lapply(seq_len(nrow(shown)), function(i)
+            build_school_item(shown$school_name[i], shown$district[i]))
+        ),
+        if (nrow(school_hits) > cap)
+          div(class = "legend-more-note",
+              sprintf("Showing first %d of %d — keep typing to narrow.",
+                      cap, nrow(school_hits)))
+      )
+    }
+
+    tagList(
+      group("Traditional districts", trad_names),
+      group("Charter schools",       charter_names),
+      school_group
+    )
+  })
+
+  # Click a legend row -> set the district filter (toggles off if already on).
+  observeEvent(input$legend_pick, {
+    pick <- input$legend_pick
+    log_evt("legend_pick", sprintf("user picked '%s'", pick))
+    if (!is.character(pick) || length(pick) != 1) return()
+    if (!(pick %in% schools$district)) return()
+
+    if (identical(input$district, pick)) {
+      updateSelectInput(session, "district", selected = "All districts")
+    } else {
+      updateSelectInput(session, "district", selected = pick)
+    }
+  })
+
+  # Click a school search result -> select that school. We switch the district
+  # filter to the school's district so the dropdowns and map agree; the
+  # pending_school() relay keeps the school selected through that change.
+  observeEvent(input$school_pick, {
+    pick <- input$school_pick
+    log_evt("school_pick", sprintf("user picked '%s'", pick))
+    if (!is.character(pick) || length(pick) != 1) return()
+    if (!(pick %in% schools$school_name)) return()
+
+    dist <- schools$district[schools$school_name == pick][1]
+    if (!identical(input$district, dist)) {
+      pending_school(pick)
+      updateSelectInput(session, "district", selected = dist)
+    } else {
+      updateSelectInput(session, "school", selected = pick)
+    }
+  })
+
+  # When the district changes (via dropdown, polygon click, or legend),
+  # scroll the matching legend row into view inside the list container.
+  observeEvent(input$district, {
+    if (!is.null(input$district) && input$district != "All districts") {
+      shinyjs::runjs(sprintf(
+        "(function(){
+           var d = %s;
+           var el = document.querySelector('[data-district=\"' + d + '\"]');
+           if (el) el.scrollIntoView({block:'nearest', behavior:'smooth'});
+         })();",
+        jsonlite::toJSON(input$district, auto_unbox = TRUE)
+      ))
+    }
+  }, ignoreInit = TRUE)
+
+  # ---- Suppress the redundant district hover card --------------------------
+  # When a mapped district is the active filter, the top KPI panel already
+  # shows that district's averages, so its polygon hover card would just
+  # duplicate them. Hide only that one card (other districts keep their cards
+  # so the map stays explorable). Implemented as an injected CSS rule keyed to
+  # the card's data-dh-district attribute — no polygon redraw, so no flicker.
+  observeEvent(input$district, {
+    sel       <- input$district
+    is_mapped <- !is.null(sel) && sel != "All districts" &&
+                 sel %in% district_polygons$usnews_district
+    log_evt("hover_suppress", sprintf("district=%s  suppress=%s", sel, is_mapped))
+
+    if (is_mapped) {
+      rule <- sprintf(
+        ".district-hover-card[data-dh-district=\"%s\"]{display:none !important;}",
+        sel
+      )
+      shinyjs::runjs(sprintf(
+        "(function(){var s=document.getElementById('dh-suppress')||(function(){var e=document.createElement('style');e.id='dh-suppress';document.head.appendChild(e);return e;})();s.textContent=%s;})();",
+        jsonlite::toJSON(rule, auto_unbox = TRUE)
+      ))
+    } else {
+      shinyjs::runjs("var s=document.getElementById('dh-suppress'); if(s){s.textContent='';}")
+    }
+  })
+
+  # =========================================================================
   # COMPARE SCHOOLS TAB
   # =========================================================================
 
@@ -397,6 +603,33 @@ function(input, output, session) {
       label = compare_metrics[[m]]$label,
       unit  = compare_metrics[[m]]$unit,
       higher_better = compare_metrics[[m]]$higher_better
+    )
+  })
+
+  # ---- Per-metric plain-language descriptions ------------------------------
+  # Each entry pairs a Compare-tab metric with a one-sentence definition and
+  # (where applicable) a pointer to the U.S. News indicator + weight it feeds.
+  # Rendered in the floating callout below the Compare controls grid.
+  metric_descriptions <- list(
+    overall_score        = "National percentile (0-100) summarizing all six U.S. News indicators. Higher is better. Top-ranked schools score in the 90s; bottom-quartile scores are concealed in the source data.",
+    state_rank           = "Each school's rank among Utah schools, sorted by Overall Score. #1 is the top-ranked school in the state.",
+    national_rank        = "Each school's rank among the roughly 18,000 ranked U.S. public high schools. #1 is the top-ranked school in the nation.",
+    ap_taken_pct         = "Share of 12th-graders who took at least one Advanced Placement exam by the end of senior year. Feeds the College Readiness Index (30% of the Overall Score).",
+    ap_passed_pct        = "Share of 12th-graders who scored 3 or higher on at least one AP exam — the threshold for college-level mastery. Feeds the College Readiness Index (30%).",
+    math_proficiency     = "Share of students scoring proficient on Utah's state mathematics assessment. Feeds State Assessment Proficiency (20%) and Performance (20%).",
+    reading_proficiency  = "Share of students scoring proficient on Utah's state reading assessment. Feeds State Assessment Proficiency (20%) and Performance (20%).",
+    science_proficiency  = "Share of students scoring proficient on Utah's state science assessment. Feeds State Assessment Proficiency (20%) and Performance (20%).",
+    graduation_rate      = "Share of 2019-2020 ninth-grade entrants who graduated within four years (by 2023). Feeds the Graduation Rate indicator (10%)."
+  )
+
+  output$cmp_metric_desc <- renderUI({
+    m <- input$cmp_metric
+    desc <- metric_descriptions[[m]]
+    if (is.null(desc)) return(NULL)
+    label <- compare_metrics[[m]]$label
+    div(class = "compare-metric-desc",
+      bsicons::bs_icon("info-circle-fill"),
+      span(tags$strong(label), " — ", desc)
     )
   })
 

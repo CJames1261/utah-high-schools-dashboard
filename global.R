@@ -29,6 +29,11 @@ library(DT)
 # fetched from the Census on first run (~30 sec). Subsequent runs are instant.
 options(tigris_use_cache = TRUE)
 
+# Data vintage surfaced to users in the KPI bar and district hover cards. All
+# six ranking inputs (state assessments, AP/IB exams, graduation) are from the
+# 2022-2023 school year, so a single label applies to the whole scorecard.
+DATA_YEAR <- "2022-2023"
+
 # ---- Load school data --------------------------------------------------------
 schools_json <- fromJSON("data/utah_high_schools.json", simplifyDataFrame = TRUE)
 geo_csv      <- read_csv("data/school_addresses_geocode.csv", show_col_types = FALSE)
@@ -160,20 +165,8 @@ if (length(unmatched_usnews) > 0) {
 message(sprintf("[district join] %d / %d traditional districts have polygons.",
                 nrow(district_polygons), length(traditional_usnews_set)))
 
-# Pre-built HTML hover labels for each polygon: bold district name + count.
-polygon_hover_labels <- lapply(seq_len(nrow(district_polygons)), function(i) {
-  n <- district_polygons$n_schools[i]
-  if (is.na(n)) n <- 0L
-  htmltools::HTML(sprintf(
-    "<div style='font-family:sans-serif;'>
-       <strong>%s</strong><br>
-       <small style='color:#666;'>%d high school%s</small>
-     </div>",
-    district_polygons$usnews_district[i],
-    n,
-    if (n == 1) "" else "s"
-  ))
-})
+# NOTE: per-polygon hover labels are the district KPI scorecards, built in the
+# Helpers section below once compute_avg_scorecard() / fmt_avg() are defined.
 
 # ---- District color palette --------------------------------------------------
 # 87 districts is too many for any pre-built qualitative palette to produce
@@ -242,6 +235,95 @@ school_popup <- function(row) {
     "</div>"
   ))
 }
+
+# ---- District hover scorecard (polygon tooltips) -----------------------------
+# Each traditional district polygon gets a hover tooltip styled like the KPI
+# panel at the top of the map: a titled card with a 3x2 grid of the district's
+# average scores. Built once at startup (data is static) for performance, and
+# uses the same compute_avg_scorecard() helper as the top KPI panel so the
+# numbers always agree.
+
+# Pre-render the Bootstrap icon SVGs once, rather than regenerating them for
+# every district x metric combination inside the loop below.
+hover_icons <- vapply(
+  c("geo-alt-fill", "pencil-square", "patch-check-fill",
+    "calculator", "book", "lightbulb", "mortarboard-fill", "calendar3"),
+  function(n) as.character(bsicons::bs_icon(n)),
+  character(1)
+)
+
+# One stat cell: icon + uppercase label, then the big value beneath.
+district_hover_stat <- function(icon, label, value) {
+  is_na <- identical(value, "n/a")
+  sprintf(
+    "<div class='district-hover-stat'>
+       <div class='district-hover-stat-head'>%s<span>%s</span></div>
+       <div class='district-hover-stat-value%s'>%s</div>
+     </div>",
+    hover_icons[[icon]], label,
+    if (is_na) " na" else "", value
+  )
+}
+
+# Full KPI scorecard card for one district (name + averaged scores).
+district_kpi_card <- function(name, avg) {
+  if (is.null(avg)) {
+    meta <- ""
+    body <- "<div style='grid-column:1/-1; padding:14px; color:#94a3b8; font-size:12px;'>No scorecard data for this district.</div>"
+    foot <- ""
+  } else {
+    meta <- sprintf(
+      "<span class='data-year-pill'>%s%s</span><span class='district-hover-count'>Based on %d school%s</span>",
+      hover_icons[["calendar3"]], DATA_YEAR,
+      avg$n, if (avg$n == 1) "" else "s"
+    )
+    vals <- c(
+      fmt_avg(avg$ap_taken), fmt_avg(avg$ap_passed), fmt_avg(avg$math),
+      fmt_avg(avg$reading),  fmt_avg(avg$science),   fmt_avg(avg$graduation)
+    )
+    body <- paste0(
+      district_hover_stat("pencil-square",    "AP Taken",   vals[1]),
+      district_hover_stat("patch-check-fill", "AP Passed",  vals[2]),
+      district_hover_stat("calculator",       "Math",       vals[3]),
+      district_hover_stat("book",             "Reading",    vals[4]),
+      district_hover_stat("lightbulb",        "Science",    vals[5]),
+      district_hover_stat("mortarboard-fill", "Graduation", vals[6])
+    )
+    # Footnote explaining any 'n/a' cells: U.S. News reports some values as
+    # ranges/buckets (e.g. '>= 80%'), which aren't numeric and are excluded
+    # from the average — the same rule noted in the control-panel scope block.
+    n_na <- sum(vals == "n/a")
+    foot <- if (n_na == 0) "" else sprintf(
+      "<div class='district-hover-foot'>%s</div>",
+      if (n_na == 6)
+        "No numeric scores — U.S. News reports this district's values as ranges."
+      else
+        "n/a = reported by U.S. News as a range, excluded from the average."
+    )
+  }
+  # data-dh-district lets the server hide this specific card via injected CSS
+  # when its district is the active filter (the top KPI panel already shows
+  # the same averages). Distinct from the legend's data-district attribute.
+  htmltools::HTML(sprintf(
+    "<div class='district-hover-card' data-dh-district='%s'>
+       <div class='district-hover-head'>
+         <div class='district-hover-title'>%s<span>%s</span></div>
+         <div class='district-hover-meta'>%s</div>
+       </div>
+       <div class='district-hover-body'>%s</div>
+       %s
+     </div>",
+    htmltools::htmlEscape(name), hover_icons[["geo-alt-fill"]],
+    htmltools::htmlEscape(name), meta, body, foot
+  ))
+}
+
+# One KPI card per polygon, in the same row order as district_polygons.
+polygon_hover_labels <- lapply(seq_len(nrow(district_polygons)), function(i) {
+  nm <- district_polygons$usnews_district[i]
+  df <- schools[schools$district == nm, ]
+  district_kpi_card(nm, compute_avg_scorecard(df))
+})
 
 # Utah bounding box for initial map view
 UTAH_BBOX <- list(lng1 = -114.05, lat1 = 37.00,

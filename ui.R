@@ -35,94 +35,664 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ===================== NAVBAR ===================== */
+/* ============================================================
+   NAVBAR — modern SaaS-style header
+   Visual model: fixed 64px height, white surface, single hairline
+   bottom border, near-imperceptible drop shadow for layering.
+   Brand block / Tabs / Right utilities all baseline-aligned and
+   vertically centered. Active tab uses an animated 2px indicator
+   driven by a pseudo-element (scaleX) for a premium feel.
+   ============================================================ */
+
 .navbar {
-  background: var(--bg-card-solid) !important;
-  border-bottom: 1px solid var(--border-color) !important;
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02), 0 2px 6px rgba(15, 23, 42, 0.04);
-  padding: 0 24px !important;
+  background: #ffffff !important;
+  border: 0 !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+  padding: 0 !important;
   min-height: 64px;
+  height: 64px;
   z-index: 1100;
+  position: sticky;
+  top: 0;
 }
-.navbar .container-fluid,
+
+/* Inner container — single source of horizontal padding. */
+.navbar > .container-fluid,
 .navbar > .container,
 .navbar > .container-xl,
 .navbar > .container-lg {
-  padding: 0 !important; gap: 16px;
+  padding: 0 28px !important;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 0;
+  max-width: none;
 }
 
-/* Brand block */
+/* -------- Brand block (logo + title + subtitle) -------- */
 .navbar .navbar-brand {
-  padding: 10px 18px 10px 0;
-  margin-right: 12px;
-  border-right: 1px solid var(--border-color);
-  margin-left: 0;
+  padding: 0;
+  margin: 0 28px 0 0;
+  display: flex;
+  align-items: center;
+  position: relative;
+  flex-shrink: 0;
 }
+/* Vertical hairline separator between brand and nav */
+.navbar .navbar-brand::after {
+  content: '';
+  position: absolute;
+  top: 50%; right: -14px;
+  height: 32px; width: 1px;
+  background: #e5e7eb;
+  transform: translateY(-50%);
+}
+
 .navbar-brand-content {
-  display: flex; align-items: center; gap: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
+/* Text block (title + subtitle) is the unnamed sibling of .brand-mark */
+.navbar-brand-content > div:not(.brand-mark) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.2;
+}
+
 .brand-mark {
-  width: 40px; height: 40px;
-  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(135deg, #2563eb 0%, #6366f1 100%);
   color: white;
-  border-radius: 11px;
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.32),
-              inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-  font-size: 18px;
-}
-.brand-title {
-  font-size: 15px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2;
-  color: var(--text-primary);
-}
-.brand-subtitle {
-  font-size: 11px; color: var(--text-tertiary);
+  border-radius: 10px;
+  box-shadow:
+    0 4px 12px rgba(37, 99, 235, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20);
+  font-size: 17px;
+  line-height: 1;
+  flex-shrink: 0;
+  align-self: center;
+  /* Small downward nudge to optically center the mark — its drop shadow
+     extends below, which pulls the perceived visual weight downward. */
   margin-top: 2px;
-  letter-spacing: 0.02em;
+}
+/* Ensure the inner SVG is block-level so there's no inline-baseline space
+   pushing the icon up from the geometric centre. */
+.brand-mark svg {
+  display: block;
 }
 
-/* Tabs — bottom-border indicator style */
-.navbar-nav { gap: 0; align-items: stretch; }
-.navbar .nav-item { display: flex; }
+/* Make the whole brand area span the full navbar height so vertical
+   centering inside it is reliable across themes. */
+.navbar .navbar-brand,
+.navbar-brand-content {
+  height: 100%;
+}
+.navbar-brand-content { align-items: center; }
+
+.brand-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: #0f172a;
+  line-height: 1.15;
+}
+.brand-subtitle {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  letter-spacing: 0.01em;
+  margin-top: 2px;
+  line-height: 1.2;
+}
+
+/* -------- Tab navigation -------- */
+.navbar-nav {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 100%;
+  margin-left: 12px;
+}
+.navbar .nav-item { display: flex; align-items: stretch; }
+
 .navbar .nav-link {
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  color: var(--text-secondary) !important;
-  padding: 22px 18px 20px !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  border: 0 !important;
-  border-bottom: 2px solid transparent !important;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
   display: inline-flex !important;
   align-items: center;
   gap: 8px;
-  position: relative;
-}
-.navbar .nav-link svg { font-size: 15px; }
-.navbar .nav-link:hover {
-  color: var(--color-primary) !important;
-  background: rgba(37, 99, 235, 0.04) !important;
-}
-.navbar .nav-link.active {
-  color: var(--color-primary) !important;
+  height: 100%;
+  padding: 0 16px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.005em;
+  color: #475569 !important;
   background: transparent !important;
-  border-bottom-color: var(--color-primary) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  position: relative;
+  transition: color 0.18s ease;
 }
 
-/* Right-side stat pill */
-.navbar-stat-pill {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 7px 14px;
-  background: linear-gradient(135deg, #eff6ff 0%, #f0f7ff 100%);
-  color: var(--color-primary);
-  border-radius: 999px;
-  font-size: 12px; font-weight: 600;
-  border: 1px solid rgba(37, 99, 235, 0.18);
-  box-shadow: var(--shadow-xs);
-  font-variant-numeric: tabular-nums;
+/* Icons sit one shade muted, brighten on hover/active for hierarchy. */
+.navbar .nav-link svg {
+  font-size: 14px;
+  flex-shrink: 0;
+  color: #94a3b8;
+  transition: color 0.18s ease, transform 0.22s ease;
 }
-.navbar-stat-pill svg { font-size: 13px; }
+
+/* Animated bottom indicator (pseudo-element, scales horizontally). */
+.navbar .nav-link::after {
+  content: '';
+  position: absolute;
+  left: 14px; right: 14px; bottom: -1px;
+  height: 2px;
+  background: #2563eb;
+  border-radius: 2px 2px 0 0;
+  transform: scaleX(0);
+  transform-origin: center;
+  transition:
+    transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.18s ease;
+}
+
+/* Hover — partial indicator + soft icon lift */
+.navbar .nav-link:hover {
+  color: #2563eb !important;
+}
+.navbar .nav-link:hover svg {
+  color: inherit;
+  transform: translateY(-1px);
+}
+.navbar .nav-link:hover::after {
+  transform: scaleX(0.5);
+  background: rgba(37, 99, 235, 0.35);
+}
+
+/* Active — full indicator + matching icon */
+.navbar .nav-link.active {
+  color: #2563eb !important;
+}
+.navbar .nav-link.active svg { color: inherit; }
+.navbar .nav-link.active::after {
+  transform: scaleX(1);
+  background: #2563eb;
+}
+
+/* -------- Right-side stat pill -------- */
+.navbar-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  background: #f8fafc;
+  color: #475569;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  align-self: center;
+}
+.navbar-stat-pill:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+.navbar-stat-pill svg {
+  font-size: 12px;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+/* ===================== HELP BUTTON IN NAVBAR ===================== */
+.btn-navbar-icon {
+  background: transparent;
+  border: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #475569;
+  cursor: pointer;
+  align-self: center;
+  transition: background 0.15s ease, color 0.15s ease;
+  margin-right: 6px;
+}
+.btn-navbar-icon svg { font-size: 18px; }
+.btn-navbar-icon:hover {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+}
+
+/* ===================== ONBOARDING MODAL ===================== */
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(15, 23, 42, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+.onboarding-overlay.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.onboarding-modal {
+  background: white;
+  width: 100%;
+  max-width: 960px;
+  max-height: 92vh;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.30),
+    0 0 0 1px rgba(15, 23, 42, 0.04);
+  transform: translateY(16px) scale(0.97);
+  opacity: 0;
+  transition: transform 0.30s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+}
+.onboarding-overlay.is-visible .onboarding-modal {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+/* ----- Modal header ----- */
+.onboarding-header {
+  padding: 26px 30px 22px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  background:
+    radial-gradient(ellipse at top right, rgba(37, 99, 235, 0.06), transparent 50%),
+    #ffffff;
+}
+.onb-header-mark {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2563eb 0%, #6366f1 100%);
+  display: flex; align-items: center; justify-content: center;
+  color: white;
+  font-size: 22px;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.32);
+  flex-shrink: 0;
+}
+.onb-header-mark svg { display: block; }
+.onb-header-text { flex: 1; min-width: 0; }
+.onb-header-eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+  padding: 3px 9px;
+  border-radius: 999px;
+  margin-bottom: 8px;
+}
+.onb-header-title {
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  margin: 0 0 6px;
+  color: #0f172a;
+  line-height: 1.2;
+}
+.onb-header-sub {
+  font-size: 14.5px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.5;
+}
+.btn-close-modal {
+  background: transparent !important;
+  border: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8 !important;
+  border-radius: 8px !important;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.btn-close-modal:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* ----- Modal body ----- */
+.onboarding-body {
+  padding: 22px 30px 22px;
+  overflow-y: auto;
+  flex: 1;
+}
+.onb-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+@media (max-width: 640px) {
+  .onb-grid { grid-template-columns: 1fr; }
+}
+.onb-section {
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #eef2f6;
+  border-radius: 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.onb-section:hover {
+  border-color: rgba(37, 99, 235, 0.20);
+  background: #f0f7ff;
+}
+.onb-section-icon {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: #eff6ff;
+  color: #2563eb;
+  border-radius: 9px;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+.onb-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 5px;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+.onb-section-body {
+  font-size: 13.5px;
+  color: #475569;
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* Methodology disclosure (collapsible details block) */
+.onb-method {
+  border: 1px solid #eef2f6;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+.onb-method-summary {
+  list-style: none;
+  padding: 13px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #475569;
+  transition: background 0.15s ease;
+}
+.onb-method-summary::-webkit-details-marker { display: none; }
+.onb-method-summary:hover { background: #f8fafc; }
+.onb-method-summary svg.method-lead-icon { color: #2563eb; font-size: 14px; }
+.onb-method-summary svg.method-chev {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 12px;
+  transition: transform 0.18s ease;
+}
+.onb-method[open] .onb-method-summary svg.method-chev { transform: rotate(90deg); }
+.onb-method-content {
+  padding: 4px 18px 16px;
+  font-size: 13.5px;
+  color: #475569;
+  line-height: 1.6;
+  border-top: 1px solid #f1f5f9;
+}
+.onb-method-content p { margin: 10px 0 8px; }
+.onb-method-content ul {
+  padding-left: 18px;
+  margin: 0 0 8px;
+}
+.onb-method-content li { margin-bottom: 4px; }
+.onb-method-content strong { color: #0f172a; }
+
+/* ----- Modal footer ----- */
+.onboarding-footer {
+  padding: 16px 30px 22px;
+  background: #f8fafc;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.onb-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #475569;
+  cursor: pointer;
+  user-select: none;
+}
+.onb-checkbox input {
+  width: 16px; height: 16px;
+  accent-color: #2563eb;
+  cursor: pointer;
+  margin: 0;
+}
+.btn-primary-modal {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 20px !important;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  color: white !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.32);
+}
+.btn-primary-modal:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.42);
+  color: white !important;
+}
+.btn-primary-modal svg { font-size: 14px; }
+
+/* ===================== ONBOARDING CAROUSEL ===================== */
+/* The modal is a 3-slide carousel: quote image, mission, then the guide.
+   A fixed modal height keeps the frame steady as slides change; each slide
+   scrolls internally and the track slides horizontally via translateX. */
+.onboarding-modal.onb-carousel {
+  position: relative;
+  height: min(92vh, 840px);
+  padding: 0;
+}
+.onb-close-float {
+  position: absolute;
+  top: 14px; right: 14px;
+  z-index: 10;
+}
+.onb-carousel-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.onb-carousel-track {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  transition: transform 0.38s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.onb-slide {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+.onb-slide-body { padding: 22px 30px; }
+
+/* Slide 1 — quote image */
+.onb-slide-quote {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+  background:
+    radial-gradient(ellipse at center, rgba(37, 99, 235, 0.05), transparent 70%),
+    #ffffff;
+}
+.onb-quote-img {
+  width: 100%;
+  max-width: 740px;
+  height: auto;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+}
+.onb-quote-caption {
+  margin: 22px 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.01em;
+}
+
+/* Slide 2 — mission */
+.onb-mission-lead {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 6px 0 18px;
+}
+.onb-mission-close {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%);
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.onb-mission-close > svg:first-child {
+  color: var(--color-primary);
+  font-size: 16px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.onb-mission-close strong { color: var(--text-primary); font-weight: 700; }
+
+/* Nav bar (arrows + dots + start) */
+.onb-carousel-nav {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 22px;
+  background: #f8fafc;
+  border-top: 1px solid #f1f5f9;
+}
+.onb-arrow {
+  width: 40px; height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: #ffffff;
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.onb-arrow svg { font-size: 16px; }
+.onb-arrow:hover:not(:disabled) {
+  background: var(--color-primary-tint);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  transform: translateY(-1px);
+}
+.onb-arrow:disabled { opacity: 0.4; cursor: not-allowed; }
+.onb-nav-right { display: inline-flex; align-items: center; gap: 10px; }
+
+/* Start button + next arrow visibility are driven by is-last on the modal,
+   because .btn-primary-modal sets display:inline-flex !important. */
+.onb-start { display: none !important; }
+.onb-carousel.is-last .onb-start { display: inline-flex !important; }
+.onb-carousel.is-last .onb-next { display: none; }
+
+/* Dots */
+.onb-dots { display: inline-flex; align-items: center; gap: 8px; }
+.onb-dot {
+  width: 8px; height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #cbd5e1;
+  cursor: pointer;
+  transition: background 0.15s ease, width 0.2s ease;
+}
+.onb-dot:hover { background: #94a3b8; }
+.onb-dot.is-active { background: var(--color-primary); width: 22px; }
+
+/* -------- Responsive collapse -------- */
+@media (max-width: 1024px) {
+  .navbar > .container-fluid { padding: 0 20px !important; }
+}
+@media (max-width: 900px) {
+  .brand-subtitle { display: none; }
+  .brand-title { font-size: 13.5px; }
+  .navbar .navbar-brand { margin-right: 16px; }
+  .navbar .navbar-brand::after { right: -8px; height: 28px; }
+  .navbar-nav { margin-left: 4px; }
+  .navbar .nav-link { padding: 0 12px !important; }
+  .navbar .nav-link::after { left: 10px; right: 10px; }
+}
+@media (max-width: 640px) {
+  .navbar > .container-fluid { padding: 0 14px !important; }
+  .navbar-stat-pill { padding: 6px 10px; gap: 6px; }
+  /* Collapse to just the schools count on the smallest screens. */
+  .navbar-stat-pill > span:nth-of-type(2),
+  .navbar-stat-pill > span:nth-of-type(4),
+  .navbar-stat-pill > span:nth-of-type(5),
+  .navbar-stat-pill > span:nth-of-type(6) { display: none; }
+}
 
 /* ===================== MAP TAB ===================== */
 .map-shell {
@@ -165,44 +735,74 @@ html, body {
 }
 .kpi-panel-title svg { color: var(--color-primary); font-size: 14px; }
 .kpi-panel-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 11px; color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
+
+/* Data-vintage pill — shows the school year of the data in the KPI panel head
+   and the district hover card so users always know what year they're seeing. */
+.data-year-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.data-year-pill svg { font-size: 10px; flex-shrink: 0; }
 .kpi-panel-body {
   display: flex; align-items: stretch;
   padding: 12px 4px;
 }
 .kpi-stat {
-  flex: 1 1 0;
-  min-width: 96px;
+  /* Each card sizes to its content first (min-width: max-content) and then
+     shares any remaining space with its siblings (flex: 1 1 auto). Cards
+     with longer labels (e.g. AP Passed) simply end up slightly wider. */
+  flex: 1 1 auto;
+  min-width: max-content;
   padding: 4px 14px;
   border-right: 1px solid var(--border-color);
 }
 .kpi-stat:last-child { border-right: 0; }
 .kpi-stat-head {
   display: flex; align-items: center; gap: 5px;
+  flex-wrap: nowrap;            /* never break to a second row */
   color: var(--text-tertiary);
   font-size: 10px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.06em;
   margin-bottom: 6px;
 }
+/* Keep the label text on one line regardless of card width. */
+.kpi-stat-head > span { white-space: nowrap; }
 .kpi-stat-head > svg { color: var(--color-primary); font-size: 11px; }
 
-/* Info icon — small, faded, lights up on hover.  Sits at the right edge of
-   the stat header via margin-left:auto and triggers a Bootstrap tooltip. */
+/* Info icon — same brand blue as the metric icons, sits at the right edge of
+   the stat header (margin-left:auto), and triggers a Bootstrap tooltip.
+   Slight opacity keeps it secondary to the metric icon and value, so the
+   visual hierarchy (icon -> label -> value) still reads clearly. */
 .kpi-info {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   cursor: help;
-  color: var(--text-tertiary);
+  color: var(--color-primary);
   font-size: 11px;
-  opacity: 0.7;
-  transition: color 0.15s ease, opacity 0.15s ease;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .kpi-info:hover {
-  color: var(--color-primary);
   opacity: 1;
+  transform: scale(1.08);
 }
 .kpi-info svg { font-size: 11.5px; }
 
@@ -225,6 +825,102 @@ html, body {
 .bs-tooltip-top .tooltip-arrow::before,
 .bs-tooltip-auto[data-popper-placement^='top'] .tooltip-arrow::before {
   border-top-color: #0f172a !important;
+}
+
+/* ===================== DISTRICT HOVER KPI CARD ===================== */
+/* Scorecard tooltip shown when hovering a district polygon. Mirrors the look
+   of the top KPI panel: a titled card over a 3x2 grid of average scores. The
+   .district-hover-tooltip class strips Leaflet's default tooltip chrome so the
+   card's own styling (border, radius, shadow) shows cleanly. */
+.leaflet-tooltip.district-hover-tooltip {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  white-space: normal !important;
+}
+.leaflet-tooltip.district-hover-tooltip::before { display: none !important; }
+
+.district-hover-card {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  width: 348px;
+  /* Never exceed the viewport on small screens (tooltip can render anywhere). */
+  max-width: min(348px, 92vw);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+.district-hover-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+.district-hover-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 700;
+  color: #0f172a; letter-spacing: -0.01em; line-height: 1.2;
+}
+.district-hover-title svg { color: #2563eb; font-size: 14px; flex-shrink: 0; }
+.district-hover-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.district-hover-count {
+  font-size: 10.5px; color: #94a3b8; font-weight: 600;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.district-hover-body {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.district-hover-stat {
+  padding: 9px 11px;
+  border-right: 1px solid #eef2f6;
+  border-bottom: 1px solid #eef2f6;
+  /* Allow the 1fr grid tracks to shrink to equal widths instead of being
+     forced wider by a long nowrap label (which would clip past the card). */
+  min-width: 0;
+}
+/* No right border on the last column, no bottom border on the last row. */
+.district-hover-stat:nth-child(3n) { border-right: 0; }
+.district-hover-stat:nth-child(n+4) { border-bottom: 0; }
+.district-hover-stat-head {
+  display: flex; align-items: center; gap: 5px;
+  color: #94a3b8;
+  font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  margin-bottom: 5px; white-space: nowrap;
+}
+.district-hover-stat-head svg { color: #2563eb; font-size: 10px; flex-shrink: 0; }
+/* Safety net: if a label can't fit (e.g. a wide fallback font before Inter
+   loads), ellipsize it rather than letting it bleed into the next cell. */
+.district-hover-stat-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.district-hover-stat-value {
+  font-size: 17px; font-weight: 700; line-height: 1;
+  color: #0f172a; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.district-hover-stat-value.na {
+  color: #94a3b8; font-weight: 500; font-size: 12px; letter-spacing: 0;
+}
+.district-hover-foot {
+  padding: 8px 14px;
+  border-top: 1px solid #eef2f6;
+  background: #f8fafc;
+  font-size: 10px;
+  color: #94a3b8;
+  line-height: 1.4;
 }
 .kpi-stat-value {
   font-size: 22px; font-weight: 700; line-height: 1;
@@ -343,6 +1039,184 @@ html, body {
   transform: translateY(-1px);
 }
 
+/* ===================== DISTRICT LEGEND ===================== */
+.legend-section {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-color);
+}
+.legend-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.legend-section-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+.legend-section-title svg { color: var(--color-primary); font-size: 14px; }
+.legend-section-count {
+  font-size: 11px; font-weight: 600;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Search input */
+.legend-search-wrap {
+  position: relative;
+  margin-bottom: 10px;
+}
+.legend-search-wrap > svg {
+  position: absolute;
+  left: 11px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 2;
+}
+.legend-search-wrap .form-group { margin-bottom: 0 !important; }
+.legend-search-wrap input {
+  width: 100%;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 6px 12px 6px 32px !important;
+  background: #f8fafc !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  font-size: 12.5px !important;
+  color: var(--text-primary) !important;
+  box-shadow: none !important;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.legend-search-wrap input::placeholder { color: var(--text-tertiary); }
+.legend-search-wrap input:focus {
+  background: #ffffff !important;
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10) !important;
+  outline: none;
+}
+
+/* List container */
+.legend-list {
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0 -8px;
+  padding: 2px 8px 4px;
+  position: relative;
+}
+.legend-list::-webkit-scrollbar { width: 6px; }
+.legend-list::-webkit-scrollbar-track { background: transparent; }
+.legend-list::-webkit-scrollbar-thumb {
+  background: #e2e8f0; border-radius: 3px;
+}
+.legend-list::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+.legend-list { scrollbar-width: thin; scrollbar-color: #e2e8f0 transparent; }
+
+/* Group header */
+.legend-group { margin-bottom: 8px; }
+.legend-group:last-child { margin-bottom: 0; }
+.legend-group-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 4px 5px;
+  font-size: 10px; font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.96);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  z-index: 1;
+  border-bottom: 1px solid #f1f5f9;
+}
+.legend-group-head svg { font-size: 9px; opacity: 0.8; }
+.legend-group-count {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Individual row */
+.legend-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px 7px 5px;
+  border-radius: 7px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease, padding 0.15s ease;
+  user-select: none;
+}
+.legend-item:hover {
+  background: #f1f5f9;
+}
+.legend-item:hover .legend-item-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+.legend-item.is-active {
+  background: var(--color-primary-tint);
+  border-left-color: var(--color-primary);
+  padding-left: 8px;
+}
+.legend-item.is-active .legend-item-name { color: var(--color-primary); }
+.legend-item.is-active .legend-item-arrow { opacity: 1; color: var(--color-primary); }
+
+.legend-item-swatch {
+  width: 12px; height: 12px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 23, 42, 0.20),
+    0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.legend-item-text {
+  display: flex; flex-direction: column;
+  min-width: 0; flex: 1;
+  gap: 1px;
+}
+.legend-item-name {
+  font-size: 12.5px; font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.legend-item-meta {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.legend-item-arrow {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+/* Empty state */
+.legend-empty {
+  padding: 22px 14px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+.legend-empty svg {
+  display: block; margin: 0 auto 6px;
+  font-size: 20px; color: var(--text-tertiary);
+}
+.legend-more-note {
+  padding: 7px 8px 2px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-tertiary);
+}
+
+/* ===================== SCOPE BLOCK ===================== */
 .scope-block {
   margin-top: 18px;
   padding: 14px;
@@ -634,7 +1508,852 @@ table.dataTable tbody tr:hover { background: var(--color-primary-tint) !importan
   }
   .detail-panel { display: none; }
 }
+
+/* ============================================================
+   ONBOARDING — SECTION HEADINGS
+   Small uppercase eyebrow style with an accent gradient bar
+   to anchor each section visually inside the modal body.
+   ============================================================ */
+.onb-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #475569;
+  margin: 4px 0 12px;
+}
+.onb-section-heading::before {
+  content: '';
+  display: block;
+  width: 3px;
+  height: 13px;
+  background: linear-gradient(180deg, #2563eb 0%, #6366f1 100%);
+  border-radius: 2px;
+}
+.onb-section-heading.is-spaced { margin-top: 22px; }
+
+/* ============================================================
+   ONBOARDING — SCORE SCALE
+   Horizontal gradient bar with percentile tick marks below.
+   Communicates the 0-100 national-percentile scale at a glance.
+   ============================================================ */
+.score-scale-block {
+  margin: 0 0 6px;
+  padding: 14px 20px 18px;
+  background: #f8fafc;
+  border: 1px solid #eef2f6;
+  border-radius: 12px;
+}
+.score-scale-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+.score-scale-meta strong {
+  color: #0f172a;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+.score-scale-track {
+  position: relative;
+  height: 10px;
+  background: linear-gradient(90deg, #fda4af 0%, #fcd34d 50%, #6ee7b7 100%);
+  border-radius: 999px;
+  margin: 22px 4px 30px;
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 23, 42, 0.08),
+    0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.score-scale-marker {
+  position: absolute;
+  top: -6px;
+  bottom: -18px;
+  width: 1.5px;
+  background: #64748b;
+  pointer-events: none;
+  border-radius: 1px;
+}
+.score-scale-marker.is-strong {
+  background: #0f172a;
+  width: 2px;
+}
+.score-scale-marker-label {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+}
+.score-scale-marker.is-strong .score-scale-marker-label {
+  color: #0f172a;
+  font-weight: 700;
+}
+.score-scale-caption {
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.55;
+  margin: 0;
+}
+.score-scale-caption strong { color: #0f172a; font-weight: 600; }
+
+/* ============================================================
+   ONBOARDING — INDICATOR WEIGHT BARS
+   Six horizontal bars whose fill width is the literal weight
+   (30%, 20%, 10%) so users can see at a glance how each input
+   contributes to the Overall Score.
+   ============================================================ */
+.indicator-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0 0 18px;
+}
+.indicator-bar { display: flex; flex-direction: column; gap: 5px; }
+.indicator-bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.indicator-bar-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.005em;
+}
+.indicator-bar-name svg {
+  color: #2563eb;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.indicator-bar-weight {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #2563eb;
+  font-variant-numeric: tabular-nums;
+  background: rgba(37, 99, 235, 0.10);
+  padding: 2px 9px;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+}
+.indicator-bar-track {
+  position: relative;
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.indicator-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, #2563eb 0%, #6366f1 100%);
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.30);
+}
+.indicator-bar-desc {
+  font-size: 11.5px;
+  color: #64748b;
+  line-height: 1.45;
+  margin: 1px 0 0;
+}
+
+/* ============================================================
+   ONBOARDING — METRIC / DATA DEFINITION ROWS
+   Reused for the About-the-data rows and the What-each-KPI-
+   metric-means rows: an icon chip + bold name (optional data-
+   year tag) + a plain-language definition.
+   ============================================================ */
+.metric-def-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 6px;
+}
+.metric-def {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #eef2f6;
+  border-radius: 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.metric-def:hover {
+  border-color: rgba(37, 99, 235, 0.20);
+  background: #f0f7ff;
+}
+.metric-def-icon {
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #eff6ff;
+  color: #2563eb;
+  border-radius: 9px;
+  font-size: 16px;
+}
+.metric-def-text { flex: 1; min-width: 0; }
+.metric-def-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  margin-bottom: 3px;
+}
+.metric-def-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.10);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.metric-def-desc {
+  font-size: 13.5px;
+  color: #475569;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ============================================================
+   ONBOARDING — DATA SOURCES TABLE + COVERAGE NOTES
+   A scannable per-source / per-year table plus two left-accent
+   callouts (one info, one amber warning) for the CCD nuance and
+   the assessment-suppression caveat.
+   ============================================================ */
+.data-source-card {
+  background: #ffffff;
+  border: 1px solid #eef2f6;
+  border-radius: 12px;
+  padding: 6px 8px 2px;
+  margin-bottom: 12px;
+}
+.data-source-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.data-source-table thead th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  padding: 8px 12px 7px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.data-source-table thead th:last-child { text-align: right; }
+.data-source-table tbody td {
+  padding: 9px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #475569;
+  vertical-align: top;
+  line-height: 1.4;
+}
+.data-source-table tbody tr:last-child td { border-bottom: 0; }
+.data-source-table tbody td:first-child {
+  font-weight: 600;
+  color: #0f172a;
+}
+.data-source-table tbody td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: #2563eb;
+  font-weight: 600;
+}
+.data-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 13px;
+  margin-bottom: 10px;
+  background: #f8fafc;
+  border-left: 3px solid #2563eb;
+  border-radius: 0 8px 8px 0;
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.5;
+}
+.data-note > svg:first-child {
+  color: #2563eb;
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.data-note strong { color: #0f172a; font-weight: 600; }
+.data-note a { color: #2563eb; font-weight: 600; text-decoration: none; }
+.data-note a:hover { text-decoration: underline; }
+.data-note.is-warn { border-left-color: #f59e0b; }
+.data-note.is-warn > svg:first-child { color: #f59e0b; }
+
+/* ============================================================
+   ONBOARDING — KEY HIGHLIGHT CALLOUT
+   Amber-highlighted, bolded banner at the top of the modal body
+   clarifying that the 2025-2026 edition label is not the data
+   year — the underlying metrics are 2022-2023 data.
+   ============================================================ */
+.onb-highlight {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  padding: 13px 15px;
+  margin-bottom: 18px;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1px solid #fde68a;
+  border-left: 4px solid #f59e0b;
+  border-radius: 10px;
+}
+.onb-highlight > svg:first-child {
+  color: #b45309;
+  font-size: 17px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.onb-highlight-lead {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+  line-height: 1.35;
+}
+.onb-highlight-body {
+  font-size: 13.5px;
+  color: #44403c;
+  line-height: 1.55;
+  margin: 0;
+}
+.onb-highlight-body strong { color: #0f172a; font-weight: 700; }
+
+/* ============================================================
+   ONBOARDING — REOPEN HINT (modal footer left side)
+   ============================================================ */
+.onb-reopen-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+}
+.onb-reopen-hint svg { color: #2563eb; font-size: 12px; flex-shrink: 0; }
+
+/* ============================================================
+   COMPARE TAB — METHODOLOGY CONTEXT STRIP
+   Small gradient ribbon at the top of the Compare tab linking
+   users back to the onboarding guide. Also visible as a CTA
+   when first arriving on the tab from the Map.
+   ============================================================ */
+.compare-info-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  margin-bottom: 18px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%);
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 12px;
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.5;
+}
+.compare-info-strip > svg:first-child {
+  color: #2563eb;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.compare-info-strip strong { color: #0f172a; font-weight: 600; }
+.compare-info-link {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  background: white;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 8px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+.compare-info-link:hover {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+}
+.compare-info-link svg { font-size: 10.5px; transition: transform 0.15s ease; }
+.compare-info-link:hover svg { transform: translateX(2px); }
+@media (max-width: 720px) {
+  .compare-info-strip { flex-wrap: wrap; }
+  .compare-info-link {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ============================================================
+   COMPARE TAB — PER-METRIC DESCRIPTION
+   Inline help text below the filter grid; updates as the user
+   changes the metric dropdown. Uses an accent left border for
+   a 'callout' feel without dominating the controls card.
+   ============================================================ */
+.compare-metric-desc {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 10px 13px;
+  background: #f8fafc;
+  border-left: 3px solid #2563eb;
+  border-radius: 0 8px 8px 0;
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.5;
+}
+.compare-metric-desc > svg:first-child {
+  color: #2563eb;
+  font-size: 13.5px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.compare-metric-desc strong { color: #0f172a; font-weight: 600; }
 "
+
+# ============================================================================
+# ONBOARDING MODAL + SCRIPT
+# Welcome / methodology guide. Auto-opens on first visit (localStorage-gated)
+# and can be reopened anytime via the help (?) icon in the navbar.
+# ============================================================================
+
+# One definition row inside the modal: an icon chip, a bold name (with an
+# optional data-year tag), and a plain-language definition. Reused for both
+# the "About the data" rows and the "What each KPI metric means" rows.
+onb_def_row <- function(icon, name, desc, tag = NULL) {
+  div(class = "metric-def",
+    div(class = "metric-def-icon", bsicons::bs_icon(icon)),
+    div(class = "metric-def-text",
+      div(class = "metric-def-name",
+        span(name),
+        if (!is.null(tag)) span(class = "metric-def-tag", tag)
+      ),
+      p(class = "metric-def-desc", desc)
+    )
+  )
+}
+
+# Definitions for the six metrics shown in the KPI bar. Wording follows
+# U.S. News & World Report's 2025-2026 Best High Schools methodology
+# (verified against usnews.com), not assumed. Tags note the data year.
+kpi_metric_defs <- list(
+  list(icon = "pencil-square", name = "AP Taken", tag = "2022-2023",
+       desc = "The percentage of a school's 12th-graders who took at least one AP or IB exam by the end of senior year. U.S. News calls this the participation rate — one of the two parts of its College Readiness Index."),
+  list(icon = "patch-check-fill", name = "AP Passed", tag = "2022-2023",
+       desc = "The percentage of 12th-graders who took an exam and earned a qualifying score — an AP score of 3 or higher, or an IB score of 4 or higher — on at least one AP or IB exam. U.S. News calls this the quality-adjusted participation rate."),
+  list(icon = "calculator", name = "Math Proficiency", tag = "2022-2023",
+       desc = "The share of students who scored proficient or above on Utah's statewide mathematics assessment. U.S. News combines math, reading, and science proficiency into one State Assessment indicator and compares schools within their state; each state sets its own proficiency levels."),
+  list(icon = "book", name = "Reading Proficiency", tag = "2022-2023",
+       desc = "The share of students who scored proficient or above on Utah's statewide reading and language-arts assessment, as reported by the state. Reading is one of the subjects U.S. News combines into that State Assessment proficiency indicator."),
+  list(icon = "lightbulb", name = "Science Proficiency", tag = "2022-2023",
+       desc = "The share of students who scored proficient or above on Utah's statewide science assessment. Science is combined with math and reading in U.S. News' State Assessment proficiency indicator."),
+  list(icon = "mortarboard-fill", name = "Graduation Rate", tag = "Class of 2023",
+       desc = "The four-year adjusted cohort rate: of the students who entered 9th grade in 2019-2020, the proportion who graduated within four years, by 2023.")
+)
+
+# "About the data" rows — high-level provenance + scope note. The per-source
+# breakdown and coverage years live in the data_sources table below.
+about_data_rows <- list(
+  list(icon = "database-fill", name = "Where the data comes from",
+       desc = "Every figure comes from U.S. News & World Report's 2025-2026 Best High Schools rankings, compiled with RTI International. U.S. News does not collect data from schools directly — it relies entirely on the third-party sources listed below."),
+  list(icon = "ui-checks", name = "What this dashboard focuses on",
+       desc = "U.S. News publishes many statistics for each school. This dashboard focuses on the six headline metrics in the KPI bar — AP Taken, AP Passed, Math, Reading, and Science proficiency, and Graduation Rate — each defined below.")
+)
+
+# Per-source provenance and the school year each input covers, taken from the
+# U.S. News 2025-2026 methodology. Surfaced as a scannable table in the modal.
+# All ranking inputs align to the 2022-2023 school year.
+data_sources <- list(
+  list(source = "State education agencies",   data = "Math, reading & science assessments", year = "2022-2023"),
+  list(source = "State education agencies",   data = "Four-year graduation rates",           year = "2022-2023"),
+  list(source = "College Board",              data = "AP exam results (grade 12)",            year = "2022-2023"),
+  list(source = "International Baccalaureate", data = "IB exam results (grade 12)",            year = "2022-2023"),
+  list(source = "Common Core of Data (NCES)", data = "Enrollment (grade 12), ethnicity, free/reduced-price lunch", year = "2022-2023")
+)
+
+onboarding_modal_ui <- div(
+  id = "onboarding_overlay", class = "onboarding-overlay",
+  div(id = "onb_modal", class = "onboarding-modal onb-carousel is-first",
+      role = "dialog", `aria-modal` = "true", `aria-labelledby` = "onb_title",
+
+    # Persistent close button — floats over every slide.
+    tags$button(class = "btn-close-modal onb-close-float", `data-onb-close` = "1",
+                type = "button", `aria-label` = "Close",
+                bsicons::bs_icon("x-lg")),
+
+    # ---- Slides viewport ----------------------------------------------
+    div(class = "onb-carousel-viewport",
+      div(class = "onb-carousel-track", id = "onb_track",
+
+        # === SLIDE 1 — quote ==========================================
+        div(class = "onb-slide onb-slide-quote",
+          tags$img(class = "onb-quote-img", src = "quote.jpg",
+                   alt = "Without data you are just another person with an opinion. — W. Edwards Deming, Data Scientist"),
+          p(class = "onb-quote-caption", "Use the arrows below to continue")
+        ),
+
+        # === SLIDE 2 — mission ========================================
+        div(class = "onb-slide",
+          div(class = "onb-slide-body onb-mission",
+            span(class = "onb-header-eyebrow",style = "font-size: 20px;", "Why this dashboard exists"),
+            h2(class = "onb-header-title", "Transparency, so Utah can act"),
+            p(class = "onb-mission-lead",
+              "This dashboard visualizes education-metric trends across Utah's public high schools. Its purpose is simple: help parents and communities see where their students are actually scoring today."),
+            do.call(div, c(list(class = "metric-def-list"), list(
+              onb_def_row("people-fill", "Built for parents & communities",
+                "It gathers each school's and district's scores in one place so families and neighborhoods can stay informed about how their local students are doing."),
+              onb_def_row("building", "A call for an official, current tool",
+                "The hope is that the Utah State Board of Education will one day build and maintain an up-to-date version of something like this — one that students, parents, faculty, and the state can all use to see transparent, current scores of where students are."),
+              onb_def_row("bar-chart-line-fill", "Data, not prescriptions",
+                "This app does not claim to provide solutions for how schools can better serve students. It is an attempt to visualize and compare the data so that parents and leaders across Utah can decide what to do with it."),
+              onb_def_row("calendar-x", "A note on the data",
+                "U.S. News publishes only the current edition — there is no year-over-year database, so trends over time cannot be shown here. And for some reason the current 2025-2026 edition reports scores from 2022-2023, which is poor practice for timely decisions.")
+            ))),
+            div(class = "onb-mission-close",
+              bsicons::bs_icon("megaphone-fill"),
+              span(
+                tags$strong("The first step to real change is being honest about where we are."),
+                " Whether you are a legislator, a school board member, or a parent, the hope is that this dashboard gives you a clearer picture of how Utah's students are being educated — shown as faithfully as the available data allows.")
+            )
+          )
+        ),
+
+        # === SLIDE 3 — the guide ======================================
+        div(class = "onb-slide",
+
+          # ---- Header ----------------------------------------------------
+          div(class = "onboarding-header",
+            div(class = "onb-header-mark", bsicons::bs_icon("mortarboard-fill")),
+            div(class = "onb-header-text",
+              span(class = "onb-header-eyebrow",style = "font-size: 20px;",
+                   "U.S. News 2025-2026 Best High Schools"),
+              h2(id = "onb_title", class = "onb-header-title",
+                 "Welcome to the Utah Public High Schools dashboard"),
+              p(class = "onb-header-sub",
+                sprintf(
+                  "An interactive geospatial view of every ranked Utah public high school — %s schools across %d traditional districts and %d charter LEAs.",
+                  formatC(nrow(schools), big.mark = ","),
+                  n_traditional, n_charters))
+            )
+          ),
+
+          # ---- Body ------------------------------------------------------
+          div(class = "onb-slide-body",
+
+      # --- Key clarification: edition label vs. data year --------------
+      div(class = "onb-highlight",
+        bsicons::bs_icon("exclamation-circle-fill"),
+        div(
+          p(class = "onb-highlight-lead",
+            "The '2025-2026' label is the ranking edition — not the data year."),
+          p(class = "onb-highlight-body",
+            "U.S. News calls these the ", tags$strong("2025-2026"),
+            " Best High Schools rankings, but every metric shown here is calculated from ",
+            tags$strong("2022-2023 data"),
+            " — the most recent figures U.S. News has released. This dashboard shows the ",
+            tags$strong("same data U.S. News publishes"),
+            "; it is fully current with their rankings, but those underlying figures are a few years old and may not reflect a school's performance today.")
+        )
+      ),
+
+      # --- About the data ----------------------------------------------
+      h3(class = "onb-section-heading", "About the data"),
+      do.call(div, c(list(class = "metric-def-list"),
+        lapply(about_data_rows, function(r)
+          onb_def_row(r$icon, r$name, r$desc))
+      )),
+
+      # --- Data sources & coverage years -------------------------------
+      h3(class = "onb-section-heading is-spaced",
+         "Data sources & coverage years"),
+      div(class = "data-source-card",
+        tags$table(class = "data-source-table",
+          tags$thead(tags$tr(
+            tags$th("Source"),
+            tags$th("Data used in the rankings"),
+            tags$th("School year")
+          )),
+          do.call(tags$tbody, lapply(data_sources, function(s)
+            tags$tr(
+              tags$td(s$source),
+              tags$td(s$data),
+              tags$td(s$year)
+            )
+          ))
+        )
+      ),
+      div(class = "data-note",
+        bsicons::bs_icon("info-circle-fill"),
+        span("The ",
+          tags$a(href = "https://nces.ed.gov/ccd/", target = "_blank",
+                 "Common Core of Data"),
+          " (NCES), last updated in 2024, supplies enrollment, ethnicity, and free / reduced-price lunch figures. The rankings use ",
+          tags$strong("2022-2023"),
+          " CCD data to align with the assessment year, while each school's profile on usnews.com shows the more current ",
+          tags$strong("2023-2024"),
+          " figures.")
+      ),
+      div(class = "data-note is-warn",
+        bsicons::bs_icon("exclamation-triangle-fill"),
+        span(tags$strong("Assessment coverage varies. "),
+          "State suppression rules sometimes limited subject-level detail — some schools were scored on only one or two subjects (which were then weighted more heavily), and schools without usable assessment data were not ranked.")
+      ),
+
+      # --- What each KPI metric means ----------------------------------
+      h3(class = "onb-section-heading is-spaced",
+         "What each KPI metric means"),
+      do.call(div, c(list(class = "metric-def-list"),
+        lapply(kpi_metric_defs, function(m)
+          onb_def_row(m$icon, m$name, m$desc, m$tag))
+      )),
+
+      # --- Using the dashboard (2x2 card grid) -------------------------
+      h3(class = "onb-section-heading is-spaced", "Using the dashboard"),
+      div(class = "onb-grid",
+        div(class = "onb-section",
+          div(class = "onb-section-icon", bsicons::bs_icon("geo-alt-fill")),
+          h4(class = "onb-section-title", "Explore the map"),
+          p(class = "onb-section-body",
+            "Pan and zoom Utah. Hover a marker for a quick scorecard; click any district polygon to filter the dashboard to that district.")
+        ),
+        div(class = "onb-section",
+          div(class = "onb-section-icon", bsicons::bs_icon("bar-chart-line-fill")),
+          h4(class = "onb-section-title", "Rank and compare"),
+          p(class = "onb-section-body",
+            "Open the Compare Schools tab to rank any metric statewide or within a district, with an exportable, searchable table.")
+        ),
+        div(class = "onb-section",
+          div(class = "onb-section-icon", bsicons::bs_icon("sliders")),
+          h4(class = "onb-section-title", "Filter and drill in"),
+          p(class = "onb-section-body",
+            "Use the filter panel, the searchable district legend, or polygon clicks to scope the view. Reset returns to the statewide view.")
+        ),
+        div(class = "onb-section",
+          div(class = "onb-section-icon", bsicons::bs_icon("clipboard-data")),
+          h4(class = "onb-section-title", "Read each scorecard"),
+          p(class = "onb-section-body",
+            "Each school card shows Overall Score, Utah and national ranks, AP participation and pass rates, proficiency, and graduation.")
+        )
+      ),
+
+      # --- Methodology details (collapsible disclosure) -----------------
+      tags$details(class = "onb-method",
+        tags$summary(class = "onb-method-summary",
+          bsicons::bs_icon("file-earmark-text", class = "method-lead-icon"),
+          span("Methodology, data sources, and limitations"),
+          bsicons::bs_icon("chevron-right", class = "method-chev")
+        ),
+        div(class = "onb-method-content",
+          p(tags$strong("How the Overall Score works"),
+            " — the six metrics above are a subset of the inputs U.S. News uses. It standardizes six weighted indicators — College Readiness (30%), State Assessment Proficiency (20%), State Assessment Performance (20%), College Curriculum Breadth (10%), Underserved Student Performance (10%), and Graduation Rate (10%) — sums them, and converts the result to a 0-100 national percentile across roughly 18,000 ranked public high schools. A score of 80 means the school outperformed 80% of ranked schools."),
+          p(tags$strong("Why some values show 'n/a'"),
+            " — U.S. News reports certain figures as ranges or buckets (for example '>= 80%' or '< 10%') rather than exact numbers. These are not numeric, so they are excluded from the averages shown here."),
+          tags$ul(
+            tags$li(tags$strong("Charter schools"),
+                    " are ranked. Each charter appears as its own LEA with no boundary polygon — they are statewide schools-of-choice."),
+            tags$li(tags$strong("Private schools"),
+                    " are not ranked due to limited public data."),
+            tags$li(tags$strong("Bottom-quartile schools"),
+                    " (below the 25th percentile) have their exact rank concealed by U.S. News and are shown as a ranking range.")
+          ),
+          p("For the full national methodology and per-state assessment notes, see the ",
+            tags$a(href = "https://www.usnews.com/education/best-high-schools/articles/how-us-news-calculated-the-rankings",
+                   target = "_blank",
+                   "U.S. News Best High Schools methodology"),
+            ".")
+        )
+      )
+          )
+        )
+      )
+    ),
+
+    # ---- Nav bar (arrows + dots + start) ------------------------------
+    div(class = "onb-carousel-nav",
+      tags$button(id = "onb_prev", class = "onb-arrow onb-prev",
+                  type = "button", `aria-label` = "Previous slide",
+                  bsicons::bs_icon("chevron-left")),
+      div(class = "onb-dots", id = "onb_dots",
+        tags$button(class = "onb-dot is-active", type = "button",
+                    `data-onb-goto` = "0", `aria-label` = "Go to slide 1"),
+        tags$button(class = "onb-dot", type = "button",
+                    `data-onb-goto` = "1", `aria-label` = "Go to slide 2"),
+        tags$button(class = "onb-dot", type = "button",
+                    `data-onb-goto` = "2", `aria-label` = "Go to slide 3")
+      ),
+      div(class = "onb-nav-right",
+        tags$button(id = "onb_next", class = "onb-arrow onb-next",
+                    type = "button", `aria-label` = "Next slide",
+                    bsicons::bs_icon("chevron-right")),
+        tags$button(id = "onb_start", class = "btn-primary-modal onb-start",
+                    `data-onb-close` = "1", type = "button",
+          span("Start exploring"),
+          bsicons::bs_icon("arrow-right")
+        )
+      )
+    )
+  )
+)
+
+# Vanilla JS for the modal — runs without a server round-trip:
+#   * Auto-shows the modal on first visit (localStorage-gated).
+#   * Wires #open_onboarding (navbar help icon) to re-open.
+#   * Closes on close-button, "Start exploring", overlay click, or Escape.
+#   * Exposes window.utahHsOpenOnboarding so the Compare-tab CTA can call it.
+onboarding_js <- '
+(function() {
+  var STORAGE_KEY = "utah_hs_onboarded_v1";
+  var SLIDES = 3;
+  var current = 0;
+
+  function getOverlay() {
+    return document.getElementById("onboarding_overlay");
+  }
+
+  function updateNav() {
+    var track = document.getElementById("onb_track");
+    if (track) track.style.transform = "translateX(" + (-current * 100) + "%)";
+    var modal = document.getElementById("onb_modal");
+    if (modal) {
+      modal.classList.toggle("is-first", current === 0);
+      modal.classList.toggle("is-last", current === (SLIDES - 1));
+    }
+    var prev = document.getElementById("onb_prev");
+    if (prev) prev.disabled = (current === 0);
+    var dots = document.querySelectorAll("#onb_dots .onb-dot");
+    for (var i = 0; i < dots.length; i++) {
+      if (i === current) dots[i].classList.add("is-active");
+      else dots[i].classList.remove("is-active");
+    }
+    var slides = document.querySelectorAll("#onb_track .onb-slide");
+    for (var s = 0; s < slides.length; s++) {
+      slides[s].setAttribute("aria-hidden", s === current ? "false" : "true");
+      if (s === current) slides[s].scrollTop = 0;
+    }
+  }
+
+  function goToSlide(i) {
+    if (i < 0) i = 0;
+    if (i > SLIDES - 1) i = SLIDES - 1;
+    current = i;
+    updateNav();
+  }
+
+  function openOnb() {
+    var ov = getOverlay();
+    if (!ov) return;
+    ov.classList.add("is-visible");
+    document.body.style.overflow = "hidden";
+    goToSlide(0);
+  }
+
+  function closeOnb() {
+    var ov = getOverlay();
+    if (ov) {
+      ov.classList.remove("is-visible");
+      document.body.style.overflow = "";
+    }
+    try { localStorage.setItem(STORAGE_KEY, "1"); } catch (e) {}
+  }
+
+  function maybeAutoShow() {
+    var seen = false;
+    try { seen = !!localStorage.getItem(STORAGE_KEY); } catch (e) {}
+    if (!seen) setTimeout(openOnb, 600);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", maybeAutoShow);
+  } else {
+    maybeAutoShow();
+  }
+
+  document.addEventListener("click", function(e) {
+    if (e.target.closest("#open_onboarding")) {
+      e.preventDefault();
+      openOnb();
+      return;
+    }
+    if (e.target.closest("#onb_next")) {
+      e.preventDefault();
+      goToSlide(current + 1);
+      return;
+    }
+    if (e.target.closest("#onb_prev")) {
+      e.preventDefault();
+      goToSlide(current - 1);
+      return;
+    }
+    var dot = e.target.closest("[data-onb-goto]");
+    if (dot) {
+      e.preventDefault();
+      goToSlide(parseInt(dot.getAttribute("data-onb-goto"), 10));
+      return;
+    }
+    if (e.target.closest("[data-onb-close]")) {
+      e.preventDefault();
+      closeOnb();
+      return;
+    }
+    var ov = getOverlay();
+    if (ov && e.target === ov) closeOnb();
+  });
+
+  document.addEventListener("keydown", function(e) {
+    var ov = getOverlay();
+    if (!ov || !ov.classList.contains("is-visible")) return;
+    if (e.key === "Escape") closeOnb();
+    else if (e.key === "ArrowRight") goToSlide(current + 1);
+    else if (e.key === "ArrowLeft") goToSlide(current - 1);
+  });
+
+  window.utahHsOpenOnboarding = openOnb;
+  window.utahHsCloseOnboarding = closeOnb;
+})();
+'
 
 # ============================================================================
 # UI
@@ -663,7 +2382,12 @@ bslib::page_navbar(
   header = tagList(
     tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
     tags$style(HTML(app_css)),
-    shinyjs::useShinyjs()
+    shinyjs::useShinyjs(),
+    # Onboarding overlay + handler script. Position:fixed in CSS, so the
+    # DOM placement is irrelevant; injecting in the header keeps it loaded
+    # before the first paint so the auto-show timer can fire immediately.
+    onboarding_modal_ui,
+    tags$script(HTML(onboarding_js))
   ),
 
   # =========== TAB 1: Map dashboard ========================================
@@ -703,7 +2427,28 @@ bslib::page_navbar(
           actionButton("reset_view",
             label = tagList(bsicons::bs_icon("arrow-counterclockwise"), "Reset view"),
             class = "btn-modern", style = "width:100%"),
-          uiOutput("scope_block")
+          uiOutput("scope_block"),
+
+          # --- District legend --------------------------------------------
+          div(class = "legend-section",
+            div(class = "legend-section-head",
+              div(class = "legend-section-title",
+                bsicons::bs_icon("palette-fill"),
+                span("Districts & schools")
+              ),
+              span(class = "legend-section-count",
+                   sprintf("%d districts", length(unique(schools$district))))
+            ),
+            div(class = "legend-search-wrap",
+              bsicons::bs_icon("search"),
+              textInput("legend_search", NULL,
+                        value = "",
+                        placeholder = "Search districts or schools...")
+            ),
+            div(class = "legend-list", id = "legend_list",
+              uiOutput("district_legend")
+            )
+          )
         )
       ),
 
@@ -753,6 +2498,21 @@ bslib::page_navbar(
         )
       ),
 
+      # Methodology context strip — links back to the onboarding guide.
+      # Visible at the top of the Compare tab so users always have a path
+      # from "what does this number mean?" to the full scoring explainer.
+      div(class = "compare-info-strip",
+        bsicons::bs_icon("info-circle-fill"),
+        span("Metrics here drive the ",
+             tags$strong("U.S. News 2025-2026 Best High Schools"),
+             " rankings — six indicators standardized into a 0-100 national percentile."),
+        tags$button(class = "compare-info-link", type = "button",
+                    onclick = "utahHsOpenOnboarding()",
+          span("How is this scored?"),
+          bsicons::bs_icon("arrow-right")
+        )
+      ),
+
       # Controls card
       div(class = "compare-card",
         div(class = "compare-card-head",
@@ -791,7 +2551,11 @@ bslib::page_navbar(
                             "All schools" = "999"),
                 selected = "25", width = "100%")
             )
-          )
+          ),
+
+          # Plain-language explanation of the currently selected metric —
+          # updates reactively as the user changes the Metric dropdown.
+          uiOutput("cmp_metric_desc")
         )
       ),
 
@@ -831,6 +2595,20 @@ bslib::page_navbar(
 
   # =========== Right-side navbar items ====================================
   bslib::nav_spacer(),
+  # Help icon — re-opens the onboarding/methodology modal.
+  bslib::nav_item(
+    bslib::tooltip(
+      tags$button(
+        id = "open_onboarding",
+        class = "btn-navbar-icon",
+        type = "button",
+        `aria-label` = "Open dashboard guide",
+        bsicons::bs_icon("question-circle")
+      ),
+      "How to use this dashboard",
+      placement = "bottom"
+    )
+  ),
   bslib::nav_item(
     div(class = "navbar-stat-pill",
       bsicons::bs_icon("buildings"),
