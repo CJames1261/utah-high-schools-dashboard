@@ -734,9 +734,23 @@ function(input, output, session) {
                )))
     }
 
-    # Y axis order: factor so first row of df sits at the top.
-    df$school_name <- factor(df$school_name, levels = rev(df$school_name))
     fill_cols <- unname(district_pal(df$district))
+
+    # school_name is NOT a unique key — two different schools are both named
+    # "Valley High School" (Jordan District and Kane District). Keying the
+    # categorical y-axis on the bare name collapsed them onto a single category,
+    # which stacked both schools into one hover tooltip (the repeated title) and
+    # crashed factor() on the duplicate level. Build a unique per-row axis label:
+    # append the district to any name shared by more than one school, with
+    # make.unique() as a final safety net. The tooltip title keeps the plain
+    # name, since the district already appears on its own line below it.
+    dup_name   <- df$school_name %in% df$school_name[duplicated(df$school_name)]
+    axis_label <- df$school_name
+    axis_label[dup_name] <- sprintf("%s (%s)", df$school_name[dup_name], df$district[dup_name])
+    axis_label <- make.unique(axis_label, sep = " #")
+
+    # Y axis order: factor so the first row of df sits at the top.
+    df$axis_label <- factor(axis_label, levels = rev(axis_label))
 
     val_lab <- if (m$unit == "%")        sprintf("%.1f%%", df[[m$key]])
                else if (m$unit == "/100") sprintf("%.2f",   df[[m$key]])
@@ -776,7 +790,7 @@ function(input, output, session) {
         data = df,
         type = "bar",
         orientation = "h",
-        y = ~school_name,
+        y = ~axis_label,
         x = stats::setNames(df[[m$key]], NULL),
         marker = list(
           color = fill_cols,
@@ -794,12 +808,14 @@ function(input, output, session) {
       ranks  <- df[[m$key]]
       xmin   <- min(ranks, na.rm = TRUE)
 
-      # Lollipop "stems" as line segments via shapes.
+      # Lollipop "stems" as line segments via shapes. y0/y1 must match the
+      # categorical axis value, which is now the unique axis_label (not the
+      # possibly-duplicated school_name).
       stems <- lapply(seq_len(nrow(df)), function(i) {
         list(type = "line", layer = "below",
              x0 = xmin, x1 = ranks[i],
-             y0 = as.character(df$school_name[i]),
-             y1 = as.character(df$school_name[i]),
+             y0 = as.character(df$axis_label[i]),
+             y1 = as.character(df$axis_label[i]),
              line = list(color = "rgba(148, 163, 184, 0.45)", width = 1.4))
       })
 
@@ -807,7 +823,7 @@ function(input, output, session) {
         data = df,
         type = "scatter",
         mode = "markers",
-        y = ~school_name,
+        y = ~axis_label,
         x = stats::setNames(ranks, NULL),
         marker = list(
           color = fill_cols,
