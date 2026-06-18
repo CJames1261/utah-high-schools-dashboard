@@ -2481,6 +2481,12 @@ bslib::page_navbar(
       div(class = "brand-subtitle", "U.S. News Best High Schools 2025-2026")
     )
   ),
+  # The `title` above is rich HTML (icon + two text lines). Left to its default
+  # (window_title = NA), bslib infers the browser-tab <title> by stringifying
+  # that HTML, which dumps the bs_icon() <svg> markup into the tab. Setting
+  # window_title explicitly gives the tab a clean, plain-text label and skips
+  # the inference entirely.
+  window_title = "Utah Public High Schools",
   id = "main_tab",
   bg = "#ffffff",
   fillable = "tab_map",
@@ -2496,6 +2502,12 @@ bslib::page_navbar(
 
   header = tagList(
     tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
+    # Custom favicon. Lives at www/education.png; Shiny serves www/ at the web
+    # root, so href = 'education.png' resolves to /education.png. tags$head() is
+    # hoisted into the document <head> by htmltools wherever it sits in the UI.
+    tags$head(
+      tags$link(rel = "icon", type = "image/jpg", href = "education.jpg")
+    ),
     tags$style(HTML(app_css)),
     shinyjs::useShinyjs(),
     # Onboarding overlay + handler script. Position:fixed in CSS, so the
