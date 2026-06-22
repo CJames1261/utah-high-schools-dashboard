@@ -51,6 +51,10 @@ normalize_district <- function(x) {
   x <- tolower(x)
   x <- gsub("[.,]", " ", x)
   x <- gsub("\\b(no\\.?\\s*)?[0-9]+\\b", " ", x)     # district numbering: "No. 58" or bare "58"
+  # Census spells out district types that U.S. News drops from the short name
+  # (e.g. Kansas "Abilene Unified School District 435" vs U.S. News "Abilene").
+  x <- gsub("\\bunified\\b",      " ", x)
+  x <- gsub("\\bconsolidated\\b", " ", x)
   x <- gsub("\\bpublic school district\\b", " ", x)
   x <- gsub("\\bpublic schools?\\b",        " ", x)
   x <- gsub("\\bschool system\\b",          " ", x)
