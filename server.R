@@ -390,17 +390,21 @@ function(input, output, session) {
   rank_data <- reactive({
     lvl <- rank_level()
     if (lvl == "district") {
-      st <- rank_state()
-      rk <- compute_prof_ranking(dplyr::filter(schools, state == st), "district")
-      list(level = lvl, df = rk, entities = rk$district, name_header = "District")
+      st   <- rank_state()
+      base <- dplyr::filter(schools, state == st)
+      rk   <- compute_prof_ranking(base, "district")
+      list(level = lvl, df = rk, entities = rk$district, name_header = "District",
+           base = base, summary_label = st)
     } else if (lvl == "school") {
-      st <- rank_state(); dsel <- input$district
-      rk <- compute_prof_ranking(
-        dplyr::filter(schools, state == st, district == dsel), "school_name")
-      list(level = lvl, df = rk, entities = rk$school_name, name_header = "School")
+      st   <- rank_state(); dsel <- input$district
+      base <- dplyr::filter(schools, state == st, district == dsel)
+      rk   <- compute_prof_ranking(base, "school_name")
+      list(level = lvl, df = rk, entities = rk$school_name, name_header = "School",
+           base = base, summary_label = dsel)
     } else {
       list(level = "state", df = state_rankings,
-           entities = state_rankings$state, name_header = "State")
+           entities = state_rankings$state, name_header = "State",
+           base = schools, summary_label = "All states")
     }
   })
 
@@ -410,8 +414,8 @@ function(input, output, session) {
     # list to the top ~half; otherwise the list uses the full column height.
     scroll_y <- if (rd$level == "school") "calc(52vh - 140px)" else "calc(100vh - 360px)"
     fmt1 <- function(x) ifelse(is.na(x) | is.nan(x), NA_real_, round(x, 1))
-    tab  <- data.frame(
-      `#`   = rd$df$rank,
+    ranked <- data.frame(
+      `#`   = ifelse(is.na(rd$df$rank), "", as.character(rd$df$rank)),
       Name  = rd$entities,
       Read  = fmt1(rd$df$reading),
       Math  = fmt1(rd$df$math),
@@ -419,8 +423,28 @@ function(input, output, session) {
       Index = fmt1(rd$df$prof_index),
       check.names = FALSE, stringsAsFactors = FALSE
     )
-    vals    <- tab$Index[is.finite(tab$Index)]
+    # Colour-bar range from the ranked rows only (the average row is excluded so
+    # it doesn't skew the scale).
+    vals    <- ranked$Index[is.finite(ranked$Index)]
     idx_rng <- if (length(vals)) range(vals) else c(0, 100)
+
+    # ---- Pinned "average" row (the same figures as the top KPI bar, for the
+    # current scope): all states at the state level, the chosen state's average
+    # above its districts, the chosen district's average above its schools. So
+    # the overall numbers sit right here and you needn't glance at the top bar.
+    agg <- function(col) {
+      m <- mean(rd$base[[col]], na.rm = TRUE); if (is.nan(m)) NA_real_ else round(m, 1)
+    }
+    sr_read <- agg("reading_proficiency"); sr_math <- agg("math_proficiency")
+    sr_sci  <- agg("science_proficiency")
+    sr_idx  <- mean(c(sr_read, sr_math, sr_sci), na.rm = TRUE)
+    sr_idx  <- if (is.nan(sr_idx)) NA_real_ else round(sr_idx, 1)
+    summary_row <- data.frame(
+      `#` = "", Name = rd$summary_label,
+      Read = sr_read, Math = sr_math, Sci = sr_sci, Index = sr_idx,
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+    tab <- rbind(summary_row, ranked)
 
     DT::datatable(
       tab,
@@ -433,9 +457,9 @@ function(input, output, session) {
         paging         = FALSE,
         scrollY        = scroll_y,
         scrollCollapse = TRUE,
-        # Keep the data's order (already best-first, unranked last); don't
-        # auto-sort the blank "#" column, which would float them to the top.
-        order          = list(),
+        # Sorting off so the average row stays pinned at the top and the rows
+        # keep their best-first rank order.
+        ordering       = FALSE,
         columnDefs     = list(
           list(className = "dt-center", targets = c(0, 2, 3, 4, 5)),
           list(width = "34px", targets = 0)
@@ -511,8 +535,13 @@ function(input, output, session) {
   observeEvent(input$state_rank_table_rows_selected, {
     i <- input$state_rank_table_rows_selected
     if (length(i) != 1) return()
+    # Row 1 is the pinned "average" row — not drillable; clear its highlight.
+    if (i == 1) {
+      DT::dataTableProxy("state_rank_table") %>% DT::selectRows(NULL)
+      return()
+    }
     rd  <- rank_data()
-    ent <- rd$entities[i]
+    ent <- rd$entities[i - 1]          # offset past the pinned average row
     if (is.na(ent)) return()
     log_evt("rank_row_click", sprintf("%s level, row %d -> %s", rd$level, i, ent))
     if (rd$level == "state") {

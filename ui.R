@@ -829,8 +829,8 @@ button:focus-visible,
   /* Cap the floor at the available centre width so min-width can never exceed
      max-width (which previously pinned the panel at 720px and overlapped the
      control panel on ~1200-1400px screens). */
-  min-width: min(720px, calc(100% - 700px));
-  max-width: calc(100% - 700px);
+  min-width: min(600px, calc(100% - 900px));
+  max-width: calc(100% - 900px);
   transition: box-shadow 0.2s ease;
 }
 .kpi-panel:hover { box-shadow: var(--shadow-xl); }
@@ -1442,7 +1442,7 @@ button:focus-visible,
 .state-rank-panel {
   position: absolute;
   top: 20px; right: 20px;
-  width: 348px;
+  width: 430px;
   z-index: 600;
   display: flex; flex-direction: column;
   overflow: hidden;
@@ -1516,6 +1516,14 @@ button:focus-visible,
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
+/* The Name column wraps so long district/school names show in full; the numeric
+   columns stay on one line and only take the room they need. */
+.state-rank-panel table.dataTable td:nth-child(2),
+.state-rank-panel table.dataTable th:nth-child(2) {
+  white-space: normal; word-break: break-word; line-height: 1.25;
+}
+.state-rank-panel table.dataTable td:not(:nth-child(2)),
+.state-rank-panel table.dataTable th:not(:nth-child(2)) { white-space: nowrap; }
 .state-rank-panel table.dataTable tbody tr { cursor: pointer; transition: background 0.1s ease; }
 .state-rank-panel table.dataTable tbody tr:hover td { background: var(--color-primary-tint) !important; }
 .state-rank-panel table.dataTable tbody tr.selected td {
@@ -1524,14 +1532,32 @@ button:focus-visible,
 .state-rank-panel table.dataTable tbody tr.selected td:first-child {
   box-shadow: inset 3px 0 0 var(--color-primary);
 }
+/* Pinned average row (always the first body row) reads as a summary/total bar
+   above the ranked rows; overrides the hover + Index colour-bar so it stays a
+   clean, uniform highlight. */
+.state-rank-panel table.dataTable tbody tr:first-child td,
+.state-rank-panel table.dataTable tbody tr:first-child:hover td {
+  background: var(--color-primary-tint) !important;
+  font-weight: 700;
+  color: var(--text-primary);
+  border-top: 0 !important;
+  border-bottom: 2px solid var(--border-color-strong) !important;
+  cursor: default;
+}
+.state-rank-panel table.dataTable tbody tr:first-child td:first-child::before {
+  content: '\\2605';                 /* star marks the average row */
+  color: var(--color-primary);
+  font-size: 11px;
+}
 .state-rank-panel .dataTables_scrollBody::-webkit-scrollbar { width: 6px; }
 .state-rank-panel .dataTables_scrollBody::-webkit-scrollbar-thumb {
   background: #e2e8f0; border-radius: 3px;
 }
 .state-rank-panel .dataTables_scrollHead { border-radius: 0; }
 /* Collapse on screens too narrow to hold both side panels + the KPI bar. */
-@media (max-width: 1280px) { .state-rank-panel { width: 300px; } }
-@media (max-width: 1040px) { .state-rank-panel { display: none !important; } }
+@media (max-width: 1480px) { .state-rank-panel { width: 360px; } }
+@media (max-width: 1180px) { .state-rank-panel { width: 320px; } }
+@media (max-width: 1060px) { .state-rank-panel { display: none !important; } }
 
 /* ===================== DATA COVERAGE NOTES MODAL ===================== */
 .dn-link, .footer-link {
