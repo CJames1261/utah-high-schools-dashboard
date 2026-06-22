@@ -2125,16 +2125,16 @@ onboarding_modal_ui <- div(
         div(class = "onb-slide",
           div(class = "onb-slide-body onb-mission",
             span(class = "onb-header-eyebrow", "Why this dashboard exists"),
-            h2(class = "onb-header-title", "Transparency, so Utah can act"),
+            h2(class = "onb-header-title", "Transparency, so communities can act"),
             p(class = "onb-mission-lead",
-              "This dashboard visualizes education-metric trends across Utah's public high schools. Its purpose is simple: help parents and communities see where their students are actually scoring today."),
+              "This dashboard visualizes education-metric trends across public high schools nationwide. Its purpose is simple: help parents and communities see where their students are actually scoring today."),
             do.call(div, c(list(class = "metric-def-list"), list(
               onb_def_row("people-fill", "Built for parents & communities",
-                "It gathers each school's and district's scores in one place so families and neighborhoods can stay informed about how their local students are doing."),
+                "It gathers each school's and district's scores in one place so families and neighborhoods anywhere can stay informed about how their local students are doing."),
               onb_def_row("building", "A call for an official, current tool",
-                "The hope is that the Utah State Board of Education will one day build and maintain an up-to-date version of something like this — one that students, parents, faculty, and the state can all use to see transparent, current scores of where students are."),
+                "The hope is that state education agencies — and ultimately the U.S. Department of Education — will one day build and maintain an up-to-date version of something like this: one that students, parents, faculty, and policymakers can all use to see transparent, current scores of where students are."),
               onb_def_row("bar-chart-line-fill", "Data, not prescriptions",
-                "This app does not claim to provide solutions for how schools can better serve students. It is an attempt to visualize and compare the data so that parents and leaders across Utah can decide what to do with it."),
+                "This app does not claim to provide solutions for how schools can better serve students. It is an attempt to visualize and compare the data so that parents and leaders in every community can decide what to do with it."),
               onb_def_row("calendar-x", "A note on the data",
                 "U.S. News publishes only the current edition — there is no year-over-year database, so trends over time cannot be shown here. And for some reason the current 2025-2026 edition reports scores from 2022-2023, which is poor practice for timely decisions.")
             ))),
@@ -2142,7 +2142,7 @@ onboarding_modal_ui <- div(
               bsicons::bs_icon("megaphone-fill"),
               span(
                 tags$strong("The first step to real change is being honest about where we are."),
-                " Whether you are a legislator, a school board member, or a parent, the hope is that this dashboard gives you a clearer picture of how Utah's students are being educated — shown as faithfully as the available data allows.")
+                " Whether you are a legislator, a school board member, or a parent, the hope is that this dashboard gives you a clearer picture of how our students are being educated — shown as faithfully as the available data allows.")
             )
           )
         ),
@@ -2157,12 +2157,12 @@ onboarding_modal_ui <- div(
               span(class = "onb-header-eyebrow",
                    "U.S. News 2025-2026 Best High Schools"),
               h2(id = "onb_title", class = "onb-header-title",
-                 "Welcome to the Utah Public High Schools dashboard"),
+                 "Welcome to the U.S. Public High Schools dashboard"),
               p(class = "onb-header-sub",
                 sprintf(
-                  "An interactive geospatial view of every ranked Utah public high school — %s schools across %d traditional districts and %d charter LEAs.",
+                  "An interactive geospatial view of every ranked public high school in the dataset — %s schools across %d districts in %d states.",
                   formatC(nrow(schools), big.mark = ","),
-                  n_traditional, n_charters))
+                  n_districts, n_states))
             )
           ),
 
@@ -2477,7 +2477,7 @@ bslib::page_navbar(
   title = div(class = "navbar-brand-content",
     div(class = "brand-mark", bsicons::bs_icon("geo-alt-fill")),
     div(
-      div(class = "brand-title", "Utah Public High Schools"),
+      div(class = "brand-title", "U.S. Public High Schools"),
       div(class = "brand-subtitle", "U.S. News Best High Schools 2025-2026")
     )
   ),
@@ -2486,7 +2486,7 @@ bslib::page_navbar(
   # that HTML, which dumps the bs_icon() <svg> markup into the tab. Setting
   # window_title explicitly gives the tab a clean, plain-text label and skips
   # the inference entirely.
-  window_title = "Utah Public High Schools",
+  window_title = "U.S. Public High Schools",
   id = "main_tab",
   bg = "#ffffff",
   fillable = "tab_map",
@@ -2540,6 +2540,16 @@ bslib::page_navbar(
         ),
         div(class = "panel-body",
           div(class = "field-group",
+            tags$label("States", class = "field-label"),
+            # Multi-select; every available state is selected by default. The
+            # server scopes the District/School dropdowns, map, and legend to
+            # whatever subset stays selected.
+            selectInput("states", NULL,
+              choices  = all_states,
+              selected = all_states,
+              multiple = TRUE, width = "100%")
+          ),
+          div(class = "field-group",
             tags$label("School District", class = "field-label"),
             selectInput("district", NULL,
               choices  = c("All districts", sort(unique(schools$district))),
@@ -2564,7 +2574,7 @@ bslib::page_navbar(
                 span("Districts & schools")
               ),
               span(class = "legend-section-count",
-                   sprintf("%d districts", length(unique(schools$district))))
+                   sprintf("%d districts · %d states", n_districts, n_states))
             ),
             div(class = "legend-search-wrap",
               bsicons::bs_icon("search"),
@@ -2601,7 +2611,7 @@ bslib::page_navbar(
           span("Sources:"),
           tags$a(href = "https://www.usnews.com/education/best-high-schools/utah/rankings",
                  target = "_blank", "U.S. News"),
-          span("·"), span("Geocodio"), span("·"), span("Census TIGER 2023")
+          span("·"), span("U.S. Census / ArcGIS / OSM"), span("·"), span("Census TIGER 2023")
         ),
         div(class = "footer-right",
           bsicons::bs_icon("info-circle"),
@@ -2747,13 +2757,13 @@ bslib::page_navbar(
       ),
       div(class = "navbar-stat-sep navbar-stat-extra"),
       div(class = "navbar-stat navbar-stat-extra",
-        span(class = "navbar-stat-num", n_traditional),
+        span(class = "navbar-stat-num", n_districts),
         span(class = "navbar-stat-label", "Districts")
       ),
       div(class = "navbar-stat-sep navbar-stat-extra"),
       div(class = "navbar-stat navbar-stat-extra",
-        span(class = "navbar-stat-num", n_charters),
-        span(class = "navbar-stat-label", "Charters")
+        span(class = "navbar-stat-num", n_states),
+        span(class = "navbar-stat-label", "States")
       )
     )
   )

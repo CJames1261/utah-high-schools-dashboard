@@ -35,15 +35,36 @@ options(tigris_use_cache = TRUE)
 DATA_YEAR <- "2022-2023"
 
 # ---- Load school data --------------------------------------------------------
-schools_json <- fromJSON("data/utah_high_schools.json", simplifyDataFrame = TRUE)
-geo_csv      <- read_csv("data/school_addresses_geocode.csv", show_col_types = FALSE)
+# Each state lives in its own data/<state>_high_schools.json file, all sharing
+# an identical schema. We discover and stack every one of them into a single
+# data frame, so adding a new state later is just a matter of dropping its JSON
+# into data/ — no edit to this file is required.
+school_files <- list.files("data", pattern = "_high_schools\\.json$",
+                           full.names = TRUE)
+
+schools_json <- bind_rows(lapply(school_files, function(path) {
+  df <- fromJSON(path, simplifyDataFrame = TRUE)
+  # Derive a `state` column from the filename (e.g. "alabama_high_schools.json"
+  # -> "Alabama") so rows stay attributable once every state is mixed together.
+  slug <- sub("_high_schools\\.json$", "", basename(path))
+  df$state <- tools::toTitleCase(gsub("_", " ", slug))
+  df
+}))
+
+message(sprintf("Loaded %d schools across %d state file(s): %s",
+                nrow(schools_json), length(school_files),
+                paste(sort(unique(schools_json$state)), collapse = ", ")))
+
+
+# Geocoded coordinates for every school address (all states), produced by
+# geo_coding_script.R via tidygeocoder. Columns: address, latitude, longitude.
+geo_csv <- read_csv("data/school_addresses_geocode.csv", show_col_types = FALSE)
 
 geo <- geo_csv %>%
   transmute(
-    address          = address,
-    latitude         = `Geocodio Latitude`,
-    longitude        = `Geocodio Longitude`,
-    geocode_accuracy = `Geocodio Accuracy Score`
+    address   = address,
+    latitude  = latitude,
+    longitude = longitude
   ) %>%
   # Some addresses appear multiple times in the CSV (e.g., a building shared
   # by two schools was geocoded once per row). Keep only one row per address
@@ -52,135 +73,67 @@ geo <- geo_csv %>%
 
 schools <- schools_json %>% left_join(geo, by = "address")
 
-# Breakdown of "districts" in the U.S. News data:
-#   - 41 are real Utah school districts (label ends in "District").
-#   - The rest are charter schools that U.S. News treats as their own LEA, so
-#     each charter appears as a 1-school "district" with the charter's name.
-#   We surface both counts so the header doesn't mislead.
-all_districts_n <- length(unique(schools$district))
-n_traditional   <- sum(grepl("District$", unique(schools$district)))
-n_charters      <- all_districts_n - n_traditional
+# ---- Headline counts (surfaced in the navbar + scope block) ------------------
+# The same district name can appear in more than one state (e.g. a "Washington
+# County" district exists in several states), so districts are counted per
+# (state, district) pair rather than by bare name.
+n_schools_total <- nrow(schools)
+n_states        <- length(unique(schools$state))
+n_districts     <- nrow(dplyr::distinct(schools, state, district))
 
-message(sprintf("Loaded %d schools (%d districts + %d charters = %d total LEAs). %d without coordinates.",
-                nrow(schools), n_traditional, n_charters, all_districts_n,
+message(sprintf("Loaded %d schools across %d state(s), %d districts. %d without coordinates.",
+                n_schools_total, n_states, n_districts,
                 sum(is.na(schools$latitude))))
 
-# ---- District boundary polygons (Census TIGER) -------------------------------
-# Census uses slightly different names than U.S. News. This lookup translates
-# from the U.S. News district name (in our JSON) to the Census NAME column.
-# Only the 41 traditional geographic districts get polygons. Charters
-# (~44 "districts" in U.S. News) are statewide schools-of-choice with no
-# boundary and remain as markers only.
-usnews_to_census_district <- c(
-  "Alpine District"        = "Alpine School District",
-  "Beaver District"        = "Beaver School District",
-  "Box Elder District"     = "Box Elder School District",
-  "Cache District"         = "Cache County School District",
-  "Canyons District"       = "Canyons School District",
-  "Carbon District"        = "Carbon School District",
-  "Daggett District"       = "Daggett School District",
-  "Davis School District"  = "Davis County School District",
-  "Duchesne District"      = "Duchesne School District",
-  "Emery District"         = "Emery County School District",
-  "Garfield District"      = "Garfield School District",
-  "Grand District"         = "Grand School District",
-  "Granite District"       = "Granite School District",
-  "Iron District"          = "Iron School District",
-  "Jordan District"        = "Jordan School District",
-  "Juab District"          = "Juab School District",
-  "Kane District"          = "Kane School District",
-  "Logan City District"    = "Logan City School District",
-  "Millard District"       = "Millard School District",
-  "Morgan District"        = "Morgan School District",
-  "Murray District"        = "Murray School District",
-  "Nebo District"          = "Nebo School District",
-  "North Sanpete District" = "North Sanpete School District",
-  "North Summit District"  = "North Summit School District",
-  "Ogden City District"    = "Ogden School District",
-  "Park City District"     = "Park City School District",
-  "Piute District"         = "Piute School District",
-  "Provo District"         = "Provo School District",
-  "Rich District"          = "Rich School District",
-  "Salt Lake District"     = "Salt Lake City School District",
-  "San Juan District"      = "San Juan School District",
-  "Sevier District"        = "Sevier School District",
-  "South Sanpete District" = "South Sanpete School District",
-  "South Summit District"  = "South Summit School District",
-  "Tintic District"        = "Tintic School District",
-  "Tooele District"        = "Tooele School District",
-  "Uintah District"        = "Uintah School District",
-  "Wasatch District"       = "Wasatch County School District",
-  "Washington District"    = "Washington County School District",
-  "Wayne District"         = "Wayne School District",
-  "Weber District"         = "Weber School District"
-)
-
-# Pull Utah unified school district polygons (cached after first run)
-ut_districts_raw <- school_districts(state = "UT", type = "unified",
-                                     cb = TRUE, year = 2023,
-                                     progress_bar = FALSE)
-
-# Normalize district names so the mapping survives TIGER vs U.S. News quirks
-# (some districts include "County" or "City", some don't; capitalization
-# differs across releases).
-normalize_district <- function(x) {
-  x <- tolower(x)
-  x <- gsub(" school district\\b", "", x)
-  x <- gsub(" district\\b",        "", x)
-  x <- gsub(" county\\b",          "", x)
-  x <- gsub(" city\\b",            "", x)
-  x <- gsub("\\s+",                " ", x)
-  trimws(x)
+# ---- District boundary polygons (pre-built; see build_district_polygons.R) ---
+# District areas for every state are matched to Census TIGER boundaries offline
+# by build_district_polygons.R and saved to data/district_polygons.rds, so the
+# app loads them instantly with no live Census downloads. Re-run that script
+# whenever you add a new state JSON. If the file is absent the app still runs —
+# it just shows school markers without the shaded district areas.
+#
+# Schema: state, usnews_district, n_schools, geometry (one row per matched
+# (state, district) — keyed by state so same-named districts in different
+# states stay distinct).
+poly_path <- "data/district_polygons.rds"
+if (file.exists(poly_path)) {
+  district_polygons <- readRDS(poly_path)
+  message(sprintf("Loaded %d district polygons across %d state(s) from %s.",
+                  nrow(district_polygons),
+                  length(unique(district_polygons$state)), poly_path))
+} else {
+  # Empty sf with the expected schema so downstream code (subsetting, st_bbox,
+  # the polygon observer) never errors when the file hasn't been built yet.
+  district_polygons <- sf::st_sf(
+    state           = character(0),
+    usnews_district = character(0),
+    n_schools       = integer(0),
+    geometry        = sf::st_sfc(crs = 4326)
+  )
+  message("NOTE: ", poly_path, " not found — run `Rscript build_district_polygons.R` ",
+          "to generate district areas. Showing school markers only for now.")
 }
 
-# Map normalized Census NAME -> original U.S. News name (the key we want).
-usnews_normalized <- normalize_district(names(usnews_to_census_district))
-norm_to_usnews    <- setNames(names(usnews_to_census_district), usnews_normalized)
+# ---- Color palettes ----------------------------------------------------------
+# Primary map palette: one distinct color per STATE. At national scale (dozens
+# of states, 1,000+ districts) coloring polygons and markers by state is what
+# reads clearly when the map is zoomed out — the polygon hover card and detail
+# panel carry the district-level detail. A hue-stepped rainbow guarantees every
+# state gets a real, distinct color (not interpolated near-white) as more
+# states are added; the shuffle keeps alphabetically-adjacent states from
+# sharing a hue. Seed makes the assignment reproducible.
+all_states <- sort(unique(schools$state))
+set.seed(42)
+state_colors <- rainbow(length(all_states), s = 0.65, v = 0.90)
+state_colors <- state_colors[sample(length(state_colors))]
+state_pal <- colorFactor(palette = state_colors, domain = all_states)
 
-# Count high schools per U.S. News district (for the polygon hover tooltip).
-school_counts <- schools %>% count(district, name = "n_schools")
-
-district_polygons <- ut_districts_raw %>%
-  mutate(
-    norm            = normalize_district(NAME),
-    usnews_district = unname(norm_to_usnews[norm])
-  ) %>%
-  filter(!is.na(usnews_district)) %>%
-  st_transform(crs = 4326) %>%
-  left_join(school_counts, by = c("usnews_district" = "district"))
-
-# Diagnostic: list districts on each side that didn't get matched.
-matched_census  <- ut_districts_raw$NAME[normalize_district(ut_districts_raw$NAME) %in% usnews_normalized]
-unmatched_census <- setdiff(ut_districts_raw$NAME, matched_census)
-traditional_usnews_set <- names(usnews_to_census_district)
-unmatched_usnews <- setdiff(traditional_usnews_set, district_polygons$usnews_district)
-if (length(unmatched_census) > 0) {
-  message("[district join] Census districts with NO polygon match:")
-  message("  ", paste(unmatched_census, collapse = "; "))
-}
-if (length(unmatched_usnews) > 0) {
-  message("[district join] U.S. News districts with NO polygon assigned:")
-  message("  ", paste(unmatched_usnews, collapse = "; "))
-}
-message(sprintf("[district join] %d / %d traditional districts have polygons.",
-                nrow(district_polygons), length(traditional_usnews_set)))
-
-# NOTE: per-polygon hover labels are the district KPI scorecards, built in the
-# Helpers section below once compute_avg_scorecard() / fmt_avg() are defined.
-
-# ---- District color palette --------------------------------------------------
-# 87 districts is too many for any pre-built qualitative palette to produce
-# fully distinct colors, but a hue-stepped rainbow with controlled saturation
-# guarantees every district reads as a real color (not interpolated near-white).
+# Secondary palette kept only for the (unchanged) Compare Schools tab, which
+# still tints its bars per district. Keyed on every district name nationwide.
 all_districts <- sort(unique(schools$district))
-
-# Shuffle district -> color mapping so alphabetically-adjacent districts
-# (which often share hue when sampled from a continuous palette) don't end up
-# with near-identical colors. Seed makes the assignment reproducible.
 set.seed(42)
 district_colors <- rainbow(length(all_districts), s = 0.7, v = 0.85)
 district_colors <- district_colors[sample(length(district_colors))]
-
 district_pal <- colorFactor(
   palette = district_colors,
   domain  = all_districts
@@ -318,16 +271,33 @@ district_kpi_card <- function(name, avg) {
   ))
 }
 
-# One KPI card per polygon, in the same row order as district_polygons.
+# One KPI card per polygon, in the same row order as district_polygons. Filter
+# by BOTH state and district so a district name that also exists in another
+# state only averages the schools that belong to this polygon's state.
 polygon_hover_labels <- lapply(seq_len(nrow(district_polygons)), function(i) {
+  st <- district_polygons$state[i]
   nm <- district_polygons$usnews_district[i]
-  df <- schools[schools$district == nm, ]
+  df <- schools[schools$state == st & schools$district == nm, ]
   district_kpi_card(nm, compute_avg_scorecard(df))
 })
 
-# Utah bounding box for initial map view
-UTAH_BBOX <- list(lng1 = -114.05, lat1 = 37.00,
-                  lng2 = -109.05, lat2 = 42.00)
+# Default / reset map view. We frame the BULK of the schools (2nd-98th
+# percentile of coordinates) rather than the raw min/max, so a handful of
+# far-flung points — e.g. Alaska's Aleutian Islands near the antimeridian —
+# don't blow the initial view out across the Pacific. Every school is still
+# plotted; outliers are reachable by panning or by selecting that state (which
+# auto-fits to it). Data-driven, so it re-frames as states are added; falls
+# back to the continental U.S. if no coordinates are present yet.
+.bbox_lat <- schools$latitude[is.finite(schools$latitude)]
+.bbox_lng <- schools$longitude[is.finite(schools$longitude)]
+DATA_BBOX <- if (length(.bbox_lat) > 0 && length(.bbox_lng) > 0) {
+  qlat <- stats::quantile(.bbox_lat, c(0.02, 0.98), names = FALSE)
+  qlng <- stats::quantile(.bbox_lng, c(0.02, 0.98), names = FALSE)
+  list(lng1 = qlng[1], lat1 = qlat[1], lng2 = qlng[2], lat2 = qlat[2])
+} else {
+  list(lng1 = -125, lat1 = 24, lng2 = -66.5, lat2 = 49.5)
+}
+rm(.bbox_lat, .bbox_lng)
 
 # Null-coalescing helper used by the debug loggers in server.R.
 `%||%` <- function(a, b) if (is.null(a)) b else a

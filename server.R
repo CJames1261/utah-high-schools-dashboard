@@ -19,11 +19,19 @@ function(input, output, session) {
   # ---- Reactive: filtered school list ---------------------------------------
   filtered <- reactive({
     df <- schools
-    if (input$district != "All districts") df <- df %>% filter(district == input$district)
-    if (input$school   != "All schools")   df <- df %>% filter(school_name == input$school)
+    # State filter (multi-select; default = all). A brief NULL before the input
+    # registers, or an empty selection, is treated as "all states".
+    sel_states <- input$states
+    if (!is.null(sel_states) && length(sel_states) > 0)
+      df <- df %>% filter(state %in% sel_states)
+    if (!is.null(input$district) && input$district != "All districts")
+      df <- df %>% filter(district == input$district)
+    if (!is.null(input$school) && input$school != "All schools")
+      df <- df %>% filter(school_name == input$school)
     log_evt("filtered()",
-            sprintf("district=%s  school=%s  -> %d rows",
-                    input$district, input$school, nrow(df)))
+            sprintf("states=%d  district=%s  school=%s  -> %d rows",
+                    length(sel_states), input$district %||% "NA",
+                    input$school %||% "NA", nrow(df)))
     df
   })
 
@@ -33,10 +41,13 @@ function(input, output, session) {
   # below re-selects it after repopulating the choices.
   pending_school <- reactiveVal(NULL)
 
-  # Keep the "School" dropdown in sync with the chosen district
+  # Keep the "School" dropdown in sync with the chosen district (and the
+  # selected states, so the list never offers a school that's filtered out).
   observeEvent(input$district, {
     log_evt("input$district", sprintf("changed -> %s", input$district))
     df <- schools
+    if (!is.null(input$states) && length(input$states) > 0)
+      df <- df %>% filter(state %in% input$states)
     if (input$district != "All districts") df <- df %>% filter(district == input$district)
     sel <- pending_school()
     updateSelectInput(
@@ -47,36 +58,77 @@ function(input, output, session) {
     if (!is.null(sel)) pending_school(NULL)
   })
 
+  # Keep the "District" dropdown scoped to the selected states. Changing states
+  # repopulates the district choices; if the current district is no longer
+  # available it falls back to "All districts" (which cascades to School above).
+  observeEvent(input$states, {
+    df <- schools
+    if (!is.null(input$states) && length(input$states) > 0)
+      df <- df %>% filter(state %in% input$states)
+    dist_choices <- c("All districts", sort(unique(df$district)))
+    cur <- if (!is.null(input$district) && input$district %in% dist_choices)
+             input$district else "All districts"
+    log_evt("input$states", sprintf("changed -> %d states; %d district choices",
+                                     length(input$states), length(dist_choices) - 1))
+    updateSelectInput(session, "district", choices = dist_choices, selected = cur)
+  }, ignoreNULL = FALSE)
+
   observeEvent(input$school, {
     log_evt("input$school", sprintf("changed -> %s", input$school))
   }, ignoreInit = TRUE)
 
   # ---- Base map (renders once) ----------------------------------------------
+  # Tiles only; district polygons are drawn (and redrawn on state-filter change)
+  # by the observer below so the map shows only the selected states' areas.
   output$map <- renderLeaflet({
-    log_evt("renderLeaflet", "building base map (polygons drawn here)")
+    log_evt("renderLeaflet", "building base map (tiles only; polygons via proxy)")
     leaflet() %>%
       addProviderTiles(providers$CartoDB.Positron) %>%
-      addPolygons(
-        data        = district_polygons,
-        fillColor   = ~district_pal(usnews_district),
-        fillOpacity = 0.35,
-        color       = "#333",
-        weight      = 1,
-        label       = polygon_hover_labels,
-        labelOptions = labelOptions(
-          direction = "auto",
-          sticky    = TRUE,           # follow the cursor across large polygons
-          opacity   = 1,
-          className = "district-hover-tooltip"
-        ),
-        layerId     = ~usnews_district,
-        group       = "districts",
-        highlightOptions = highlightOptions(
-          weight = 3, color = "#000", fillOpacity = 0.55, bringToFront = FALSE
-        )
-      ) %>%
-      fitBounds(UTAH_BBOX$lng1, UTAH_BBOX$lat1,
-                UTAH_BBOX$lng2, UTAH_BBOX$lat2)
+      fitBounds(DATA_BBOX$lng1, DATA_BBOX$lat1,
+                DATA_BBOX$lng2, DATA_BBOX$lat2)
+  })
+
+  # ---- Draw district polygons for the selected states -----------------------
+  # Redraws (clear + re-add) whenever the state filter changes, so only the
+  # chosen states' district areas appear, colored by state. Each polygon's
+  # label is its pre-built KPI scorecard (polygon_hover_labels, aligned to
+  # district_polygons rows in global.R), subset to the same rows. layerId is a
+  # "State || District" composite so same-named districts in different states
+  # stay distinct on the map.
+  observe({
+    sel_states <- input$states
+    idx <- if (is.null(sel_states) || length(sel_states) == 0) {
+      seq_len(nrow(district_polygons))
+    } else {
+      which(district_polygons$state %in% sel_states)
+    }
+    log_evt("polygon obs", sprintf("drawing %d / %d district polygons",
+                                   length(idx), nrow(district_polygons)))
+
+    proxy <- leafletProxy("map") %>% clearShapes()
+    if (length(idx) == 0) return()
+
+    polys <- district_polygons[idx, ]
+    polys$poly_id <- paste(polys$state, polys$usnews_district, sep = " || ")
+    proxy %>% addPolygons(
+      data        = polys,
+      fillColor   = ~state_pal(state),
+      fillOpacity = 0.35,
+      color       = "#333",
+      weight      = 1,
+      label       = polygon_hover_labels[idx],
+      labelOptions = labelOptions(
+        direction = "auto",
+        sticky    = TRUE,           # follow the cursor across large polygons
+        opacity   = 1,
+        className = "district-hover-tooltip"
+      ),
+      layerId     = ~poly_id,
+      group       = "districts",
+      highlightOptions = highlightOptions(
+        weight = 3, color = "#000", fillOpacity = 0.55, bringToFront = FALSE
+      )
+    )
   })
 
   # ---- Update markers when the filter changes -------------------------------
@@ -107,7 +159,7 @@ function(input, output, session) {
       lng         = df$longitude,
       lat         = df$latitude,
       radius      = 7,
-      fillColor   = unname(district_pal(df$district)),
+      fillColor   = unname(state_pal(df$state)),
       color       = "#222",
       weight      = 1,
       fillOpacity = 0.95,
@@ -134,35 +186,26 @@ function(input, output, session) {
       )
     )
 
-    # Auto-fit logic, in order of preference:
-    #   1. Single specific school selected -> zoom in tight on it.
-    #   2. District selected AND has a polygon (the 41 traditional districts)
-    #      -> fit the map to the polygon's bounding box.
-    #   3. Nothing filtered (statewide view) -> fit to the Utah bounding box
-    #      so the state stays centred on initial load and on reset.
-    #   4. Otherwise (charter / unmapped district) -> fit to the school coords.
+    # Auto-fit:
+    #   1. A single specific school selected -> zoom in tight on it.
+    #   2. Default view (all states, no district/school) -> the framed DATA_BBOX
+    #      so far-flung AK/HI points don't stretch the view across the Pacific.
+    #   3. Otherwise -> fit to the bounding box of the schools in view (one
+    #      state, one district, etc.), which naturally zooms to AK or HI when
+    #      they're the selection.
+    sel_states <- input$states
+    is_default_view <-
+      (is.null(sel_states) || setequal(sel_states, all_states)) &&
+      input$district == "All districts" && input$school == "All schools"
+
     if (input$school != "All schools" && nrow(df) == 1) {
       log_evt("auto-fit", sprintf("branch=school  zoom 14 on %s",
                                   df$school_name))
       proxy %>% setView(lng = df$longitude, lat = df$latitude, zoom = 14)
-    } else if (input$district != "All districts" &&
-               input$district %in% district_polygons$usnews_district) {
-      bbox <- st_bbox(district_polygons[
-        district_polygons$usnews_district == input$district, ])
-      log_evt("auto-fit", sprintf("branch=polygon  bbox=[%.3f,%.3f,%.3f,%.3f]",
-                                  bbox["xmin"], bbox["ymin"],
-                                  bbox["xmax"], bbox["ymax"]))
-      proxy %>% fitBounds(
-        as.numeric(bbox["xmin"]), as.numeric(bbox["ymin"]),
-        as.numeric(bbox["xmax"]), as.numeric(bbox["ymax"])
-      )
-    } else if (input$district == "All districts" &&
-               input$school   == "All schools") {
-      log_evt("auto-fit", "branch=utah  centring on UTAH_BBOX")
-      proxy %>% fitBounds(
-        UTAH_BBOX$lng1, UTAH_BBOX$lat1,
-        UTAH_BBOX$lng2, UTAH_BBOX$lat2
-      )
+    } else if (is_default_view) {
+      log_evt("auto-fit", "branch=default  framing DATA_BBOX")
+      proxy %>% fitBounds(DATA_BBOX$lng1, DATA_BBOX$lat1,
+                          DATA_BBOX$lng2, DATA_BBOX$lat2)
     } else {
       log_evt("auto-fit", sprintf("branch=schools  bbox=[%.3f,%.3f,%.3f,%.3f]",
                                   min(df$longitude), min(df$latitude),
@@ -214,22 +257,26 @@ function(input, output, session) {
       log_evt("shape_click", "  -> id length != 1, ignoring")
       return()
     }
-    if (id %in% schools$district) {
-      log_evt("shape_click", sprintf("  -> updating input$district to %s", id))
-      updateSelectInput(session, "district", selected = as.character(id))
+    # layerId is a "State || District" composite; recover the district name.
+    parts <- strsplit(as.character(id), " || ", fixed = TRUE)[[1]]
+    dist  <- if (length(parts) == 2) parts[[2]] else as.character(id)
+    if (dist %in% schools$district) {
+      log_evt("shape_click", sprintf("  -> updating input$district to %s", dist))
+      updateSelectInput(session, "district", selected = dist)
     } else {
-      log_evt("shape_click", sprintf("  -> %s not in schools$district, ignoring", id))
+      log_evt("shape_click", sprintf("  -> %s not in schools$district, ignoring", dist))
     }
   })
 
   # ---- Reset button ---------------------------------------------------------
   observeEvent(input$reset_view, {
     log_evt("reset_view", "clicked -> resetting filters and map view")
+    updateSelectInput(session, "states",   selected = all_states)
     updateSelectInput(session, "district", selected = "All districts")
     updateSelectInput(session, "school",   selected = "All schools")
     leafletProxy("map") %>%
-      fitBounds(UTAH_BBOX$lng1, UTAH_BBOX$lat1,
-                UTAH_BBOX$lng2, UTAH_BBOX$lat2)
+      fitBounds(DATA_BBOX$lng1, DATA_BBOX$lat1,
+                DATA_BBOX$lng2, DATA_BBOX$lat2)
   })
 
   # ---- Collapse / expand the floating control panel -------------------------
@@ -267,9 +314,9 @@ function(input, output, session) {
   kpi_tooltips <- list(
     ap_taken   = "Percentage of 12th-grade students who took at least one Advanced Placement (AP) exam during high school.",
     ap_passed  = "Percentage of 12th-grade students who scored 3 or higher on at least one AP exam — the threshold for college-level mastery.",
-    math       = "Percentage of students who scored proficient on Utah's state-administered mathematics assessment.",
-    reading    = "Percentage of students who scored proficient on Utah's state-administered reading assessment.",
-    science    = "Percentage of students who scored proficient on Utah's state-administered science assessment.",
+    math       = "Percentage of students who scored proficient on the state-administered mathematics assessment.",
+    reading    = "Percentage of students who scored proficient on the state-administered reading assessment.",
+    science    = "Percentage of students who scored proficient on the state-administered science assessment.",
     graduation = "Percentage of students who graduate within four years of starting 9th grade (four-year adjusted cohort rate)."
   )
 
@@ -303,7 +350,7 @@ function(input, output, session) {
   current_scope <- function() {
     if (input$school != "All schools") return(list(name = input$school, kind = "school"))
     if (input$district != "All districts") return(list(name = input$district, kind = "district"))
-    list(name = "Statewide", kind = "all")
+    list(name = "All states", kind = "all")
   }
 
   # ---- KPI panel (top center) — single card with dynamic title -------------
@@ -317,7 +364,7 @@ function(input, output, session) {
     if (is.null(avg)) return(NULL)
 
     title <- switch(scope$kind,
-      "all"      = "All Utah district averages",
+      "all"      = "All school averages",
       "district" = sprintf("%s averages", scope$name),
       "school"   = sprintf("%s scorecard",  scope$name)
     )
@@ -358,10 +405,12 @@ function(input, output, session) {
       "district" = "District",
       "school"   = "School")
 
-    # Statewide view: surface the district / charter split too.
+    # All-states view: surface the school / district / state counts for the
+    # current selection.
     meta <- if (scope$kind == "all") {
-      sprintf("%d schools  ·  %d districts + %d charters",
-              nrow(df), n_traditional, n_charters)
+      sprintf("%d schools  ·  %d districts  ·  %d states",
+              nrow(df), dplyr::n_distinct(df$state, df$district),
+              dplyr::n_distinct(df$state))
     } else {
       sprintf("%d school%s in view", nrow(df), if (nrow(df) == 1) "" else "s")
     }
@@ -380,9 +429,11 @@ function(input, output, session) {
   # =========================================================================
   # DISTRICT LEGEND  (inside the floating control panel)
   # =========================================================================
-  district_counts <- schools %>% count(district, name = "n_schools")
+  # Counted per (state, district) so same-named districts in different states
+  # stay distinct.
+  district_counts <- schools %>% count(state, district, name = "n_schools")
 
-  build_legend_item <- function(name, count, is_active) {
+  build_legend_item <- function(name, state, count, is_active) {
     div(
       class       = paste("legend-item", if (is_active) "is-active" else ""),
       `data-district` = name,
@@ -400,7 +451,7 @@ function(input, output, session) {
       title       = sprintf("%s — %d school%s",
                             name, count, if (count == 1) "" else "s"),
       div(class = "legend-item-swatch",
-          style = sprintf("background:%s;", unname(district_pal(name)))),
+          style = sprintf("background:%s;", unname(state_pal(state)))),
       div(class = "legend-item-text",
         span(class = "legend-item-name", name),
         span(class = "legend-item-meta",
@@ -411,9 +462,9 @@ function(input, output, session) {
   }
 
   # A search-result row for an individual school (vs a district row above).
-  # Clicking it sets input$school_pick; the swatch uses the school's district
-  # color and the meta line shows which district it belongs to.
-  build_school_item <- function(name, district) {
+  # Clicking it sets input$school_pick; the swatch uses the school's state color
+  # and the meta line shows which district it belongs to.
+  build_school_item <- function(name, district, state) {
     div(
       class           = "legend-item legend-item-school",
       `data-school`   = name,
@@ -430,7 +481,7 @@ function(input, output, session) {
       ),
       title           = sprintf("%s — %s", name, district),
       div(class = "legend-item-swatch",
-          style = sprintf("background:%s;", unname(district_pal(district)))),
+          style = sprintf("background:%s;", unname(state_pal(state)))),
       div(class = "legend-item-text",
         span(class = "legend-item-name", name),
         span(class = "legend-item-meta", district)
@@ -442,51 +493,59 @@ function(input, output, session) {
   output$district_legend <- renderUI({
     query    <- tolower(input$legend_search %||% "")
     selected <- input$district %||% "All districts"
+    sel_states <- input$states
+    if (is.null(sel_states) || length(sel_states) == 0) sel_states <- all_states
 
-    trad_names    <- sort(unique(district_counts$district[
-                       grepl("District$", district_counts$district)]))
-    charter_names <- sort(unique(district_counts$district[
-                       !grepl("District$", district_counts$district)]))
+    # District rows for the selected states, sorted by state then district, and
+    # filtered by the search box when one is active.
+    dc <- district_counts[district_counts$state %in% sel_states, ]
+    if (nzchar(query)) dc <- dc[grepl(query, tolower(dc$district), fixed = TRUE), ]
+    dc <- dc[order(dc$state, dc$district), ]
 
-    # Individual schools surface only while searching, so the default view
-    # stays a clean district list rather than a 219-row scroll.
-    school_hits <- schools[0, c("school_name", "district")]
+    # Individual schools surface only while searching (scoped to the selected
+    # states), so the default view stays a clean district list.
+    school_hits <- schools[0, c("school_name", "district", "state")]
     if (nzchar(query)) {
-      trad_names    <- trad_names[   grepl(query, tolower(trad_names),    fixed = TRUE)]
-      charter_names <- charter_names[grepl(query, tolower(charter_names), fixed = TRUE)]
-      sh <- schools[grepl(query, tolower(schools$school_name), fixed = TRUE), ]
-      school_hits <- sh[order(sh$school_name), c("school_name", "district")]
+      sh <- schools[schools$state %in% sel_states &
+                    grepl(query, tolower(schools$school_name), fixed = TRUE), ]
+      school_hits <- sh[order(sh$school_name), c("school_name", "district", "state")]
     }
 
-    if (length(trad_names) == 0 && length(charter_names) == 0 &&
-        nrow(school_hits) == 0) {
+    if (nrow(dc) == 0 && nrow(school_hits) == 0) {
       return(div(class = "legend-empty",
         bsicons::bs_icon("search"),
         "No districts or schools match your search."
       ))
     }
 
-    n_for <- function(nm) district_counts$n_schools[district_counts$district == nm]
+    # Cap district rows so selecting many states (1,000+ districts) renders fast.
+    cap_d       <- 300L
+    truncated_d <- nrow(dc) > cap_d
+    dc_shown    <- utils::head(dc, cap_d)
 
-    group <- function(label, names) {
-      if (length(names) == 0) return(NULL)
+    # One group per state, listing that state's districts (colored by state).
+    state_group <- function(st) {
+      rows <- dc_shown[dc_shown$state == st, ]
+      if (nrow(rows) == 0) return(NULL)
       div(class = "legend-group",
         div(class = "legend-group-head",
-          span(label),
-          span(class = "legend-group-count", length(names))
+          span(st),
+          span(class = "legend-group-count", nrow(rows))
         ),
         div(class = "legend-group-body",
-          lapply(names, function(nm)
-            build_legend_item(nm, n_for(nm), is_active = (nm == selected)))
+          lapply(seq_len(nrow(rows)), function(i)
+            build_legend_item(rows$district[i], rows$state[i], rows$n_schools[i],
+                              is_active = (rows$district[i] == selected)))
         )
       )
     }
+    district_groups <- lapply(sort(unique(dc_shown$state)), state_group)
 
     # Schools group (search results only), capped so the list stays usable.
     school_group <- NULL
     if (nrow(school_hits) > 0) {
-      cap   <- 50L
-      shown <- utils::head(school_hits, cap)
+      cap_s <- 50L
+      shown <- utils::head(school_hits, cap_s)
       school_group <- div(class = "legend-group",
         div(class = "legend-group-head",
           span("Schools"),
@@ -494,18 +553,21 @@ function(input, output, session) {
         ),
         div(class = "legend-group-body",
           lapply(seq_len(nrow(shown)), function(i)
-            build_school_item(shown$school_name[i], shown$district[i]))
+            build_school_item(shown$school_name[i], shown$district[i], shown$state[i]))
         ),
-        if (nrow(school_hits) > cap)
+        if (nrow(school_hits) > cap_s)
           div(class = "legend-more-note",
               sprintf("Showing first %d of %d — keep typing to narrow.",
-                      cap, nrow(school_hits)))
+                      cap_s, nrow(school_hits)))
       )
     }
 
     tagList(
-      group("Traditional districts", trad_names),
-      group("Charter schools",       charter_names),
+      district_groups,
+      if (truncated_d)
+        div(class = "legend-more-note",
+            sprintf("Showing first %d of %d districts — search or select fewer states to narrow.",
+                    cap_d, nrow(dc))),
       school_group
     )
   })

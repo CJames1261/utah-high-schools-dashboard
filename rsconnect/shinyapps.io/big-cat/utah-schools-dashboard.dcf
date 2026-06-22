@@ -5,6 +5,6 @@ account: big-cat
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 17522898
-bundleId: 12140845
+bundleId: 12146044
 url: https://big-cat.shinyapps.io/utah-schools-dashboard/
 version: 1
