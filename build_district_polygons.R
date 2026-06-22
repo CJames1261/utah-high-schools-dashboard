@@ -1,61 +1,56 @@
 # build_district_polygons.R
 # ============================================================================
-# One-time builder for data/district_polygons.rds — the combined Census school
-# district boundaries for every state present in data/*_high_schools.json,
-# matched to the U.S. News district names the app uses.
+# Builds the Census school-district + state boundary polygons the app draws,
+# matched to the U.S. News district names in data/*_high_schools.json.
 #
-# RE-RUN THIS whenever you add a new state JSON to data/:
-#     Rscript build_district_polygons.R
+# Outputs (committed so the Shiny app loads them instantly):
+#   data/district_polygons.rds  - one row per matched (state, district)
+#   data/state_polygons.rds     - one row per state (single outline)
 #
-# Needs network access to the U.S. Census (via tigris). The output .rds is
-# committed to the repo so the Shiny app (global.R) loads it instantly at
-# RE-RUN THIS whenever you add a new state JSON to data/:
-#     Rscript build_district_polygons.R
+# Two ways to use it:
+#   * Standalone full rebuild (every state):   Rscript build_district_polygons.R
+#   * As a reusable module (functions only) — e.g. from update_data.R:
+#         options(polygons.source.only = TRUE)
+#         source("build_district_polygons.R")
+#         build_district_polygons(target_states = c("Idaho"), append = TRUE)
 #
-# Needs network access to the U.S. Census (via tigris). The output .rds is
-# committed to the repo so the Shiny app (global.R) loads it instantly at
-# startup with NO live downloads. If the file is missing the app still boots,
-# it just shows school markers without district areas.
+# Needs network access to the U.S. Census (via tigris). tigris caches downloads,
+# so re-runs only re-fetch states it hasn't seen. If the .rds files are missing
+# the app still boots (school markers only, no district areas).
 # ============================================================================
 
-library(jsonlite)
-library(dplyr)
-library(sf)
-library(tigris)
+suppressWarnings(suppressMessages({
+  library(jsonlite)
+  library(dplyr)
+  library(sf)
+  library(tigris)
+}))
 
 options(tigris_use_cache = TRUE)
 
-TIGER_YEAR <- 2023   # Census TIGER/Line vintage for the boundaries
+TIGER_YEAR <- 2023                              # Census TIGER/Line vintage
+state_abbr <- setNames(state.abb, state.name)   # "Utah" -> "UT" (50 states)
+TYPE_PRIORITY <- c("unified", "secondary", "elementary")
 
-# ---- 1. Load all schools (same stacking logic as global.R) -----------------
-school_files <- list.files("data", pattern = "_high_schools\\.json$",
-                           full.names = TRUE)
-if (length(school_files) == 0) stop("No data/*_high_schools.json files found.")
+# ---- Load every school from data/*.json (same stacking logic as global.R) ---
+load_all_schools <- function() {
+  files <- list.files("data", pattern = "_high_schools\\.json$", full.names = TRUE)
+  if (length(files) == 0) stop("No data/*_high_schools.json files found.")
+  bind_rows(lapply(files, function(path) {
+    df <- fromJSON(path, simplifyDataFrame = TRUE)
+    slug <- sub("_high_schools\\.json$", "", basename(path))
+    df$state <- tools::toTitleCase(gsub("_", " ", slug))
+    df
+  }))
+}
 
-schools <- bind_rows(lapply(school_files, function(path) {
-  df <- fromJSON(path, simplifyDataFrame = TRUE)
-  slug <- sub("_high_schools\\.json$", "", basename(path))
-  df$state <- tools::toTitleCase(gsub("_", " ", slug))
-  df
-}))
-
-states_present <- sort(unique(schools$state))
-school_counts  <- schools %>% count(state, district, name = "n_schools")
-message(sprintf("Building district polygons for %d state(s): %s",
-                length(states_present), paste(states_present, collapse = ", ")))
-
-# state name -> USPS abbreviation (base R datasets cover all 50 states).
-state_abbr <- setNames(state.abb, state.name)
-
-# ---- 2. Name normalization (identical to the old global.R helper) ----------
-# Smooths over TIGER vs U.S. News naming quirks: case, and trailing
-# "School District" / "District" / "County" / "City" tokens.
+# ---- Name normalization ----------------------------------------------------
+# Smooths over TIGER vs U.S. News naming quirks: case, punctuation, and the
+# various "...School District / Public Schools / County / City" qualifiers.
 normalize_district <- function(x) {
   x <- tolower(x)
-  x <- gsub("[.,]", " ", x)                          # Dist. / St. -> word forms
-  # Strip the various "...School District / Public Schools / School System"
-  # suffixes (longest phrases first) plus the County/City qualifiers, so the
-  # U.S. News and Census spellings of the same district collapse to one token.
+  x <- gsub("[.,]", " ", x)
+  x <- gsub("\\b(no\\.?\\s*)?[0-9]+\\b", " ", x)     # district numbering: "No. 58" or bare "58"
   x <- gsub("\\bpublic school district\\b", " ", x)
   x <- gsub("\\bpublic schools?\\b",        " ", x)
   x <- gsub("\\bschool system\\b",          " ", x)
@@ -69,8 +64,8 @@ normalize_district <- function(x) {
   trimws(x)
 }
 
-# Utah override map — preserved verbatim from the original global.R so Utah's
-# 41 traditional districts keep matching exactly as they did before.
+# Utah override map — preserved verbatim so Utah's 41 traditional districts keep
+# matching exactly as verified.
 usnews_to_census_district <- c(
   "Alpine District"        = "Alpine School District",
   "Beaver District"        = "Beaver School District",
@@ -115,13 +110,11 @@ usnews_to_census_district <- c(
   "Weber District"         = "Weber School District"
 )
 
-# ---- 3. Download a state's districts (all three types, combined) ------------
+# ---- Download a state's districts (all three types, combined) ---------------
 # Many states (CA, CT, ...) split high-school and elementary into separate
 # districts, so unified-only would miss most U.S. News names. We pull all three
-# and rank them so that when two types share a normalized name we keep the more
+# and rank them so that when two share a normalized name we keep the more
 # encompassing boundary (unified > secondary > elementary).
-TYPE_PRIORITY <- c("unified", "secondary", "elementary")
-
 get_state_districts <- function(abbr) {
   parts <- lapply(TYPE_PRIORITY, function(ty) {
     out <- tryCatch(
@@ -143,8 +136,8 @@ get_state_districts <- function(abbr) {
   do.call(rbind, parts)
 }
 
-# ---- 4. Match one state's U.S. News districts to Census polygons ------------
-match_state <- function(state_name) {
+# ---- Match one state's U.S. News districts to Census polygons ---------------
+match_state <- function(state_name, schools, school_counts) {
   abbr <- state_abbr[[state_name]]
   if (is.null(abbr) || is.na(abbr)) {
     message(sprintf("[%s] no USPS abbreviation; skipping", state_name))
@@ -197,28 +190,86 @@ match_state <- function(state_name) {
   out[, c("state", "usnews_district", "n_schools")]   # geometry sticky
 }
 
-# ---- 5. Build, combine, save -----------------------------------------------
-parts <- lapply(states_present, match_state)
-parts <- parts[!vapply(parts, is.null, logical(1))]
-if (length(parts) == 0) stop("No districts matched for any state — aborting.")
+# ---- True Census state outlines for a set of states -------------------------
+build_state_outlines <- function(target_states, fallback_districts = NULL) {
+  out <- tryCatch({
+    st <- states(cb = TRUE, year = TIGER_YEAR, progress_bar = FALSE)
+    st <- st[st$NAME %in% target_states, ]
+    st$state <- st$NAME
+    st_transform(st[, "state"], crs = 4326)
+  }, error = function(e) {
+    message("states() download failed (", conditionMessage(e),
+            "); dissolving district polygons per state instead.")
+    if (is.null(fallback_districts) || nrow(fallback_districts) == 0) return(NULL)
+    fallback_districts %>% group_by(state) %>%
+      summarise(.groups = "drop") %>% select(state)
+  })
+  if (is.null(out)) return(NULL)
+  out[, "state"]
+}
 
-district_polygons <- do.call(rbind, parts)
-district_polygons <- st_transform(district_polygons, crs = 4326)
+# Merge freshly-built polygons for `todo` states into an existing .rds: drop any
+# existing rows for those states (so a re-run refreshes them) and rbind the new.
+# With append = FALSE, return only the new polygons (full rebuild).
+.merge_polys <- function(path, new_polys, todo, append) {
+  if (!append || !file.exists(path)) return(new_polys)
+  old <- readRDS(path)
+  old <- old[!old$state %in% todo, ]
+  if (is.null(new_polys) || nrow(new_polys) == 0) return(old)
+  if (nrow(old) == 0) return(new_polys)
+  rbind(old, st_transform(new_polys, st_crs(old)))
+}
 
-dir.create("data", showWarnings = FALSE)
-saveRDS(district_polygons, "data/district_polygons.rds")
+# ---- Main entry: build (or incrementally extend) the polygon files ----------
+# target_states = NULL  -> every state present in data/.
+#               = c(..) -> only those states.
+# append = TRUE -> merge into the existing .rds files, replacing rows for the
+#   target states (existing states are left untouched — nothing re-downloaded).
+build_district_polygons <- function(target_states = NULL, append = FALSE) {
+  schools       <- load_all_schools()
+  school_counts <- schools %>% count(state, district, name = "n_schools")
+  present       <- sort(unique(schools$state))
+  todo <- if (is.null(target_states)) present else intersect(target_states, present)
 
-# ---- 6. Summary + Utah sanity check ----------------------------------------
-per_state <- as.data.frame(table(district_polygons$state))
-names(per_state) <- c("state", "polygons")
-message("\n--- district_polygons.rds written ---")
-print(per_state, row.names = FALSE)
-message(sprintf("Total: %d district polygons across %d state(s).",
-                nrow(district_polygons), length(unique(district_polygons$state))))
+  if (length(todo) == 0) {
+    message("build_district_polygons(): no matching states to process.")
+    return(invisible(NULL))
+  }
+  message(sprintf("Building polygons for %d state(s): %s",
+                  length(todo), paste(todo, collapse = ", ")))
 
-ut_n <- sum(district_polygons$state == "Utah")
-message(sprintf("Utah check: %d polygons (expected 41).", ut_n))
-if (ut_n != 41) {
-  message("WARNING: Utah polygon count changed from the expected 41 — review the ",
-          "Utah override map and Census name matches above.")
+  parts  <- lapply(todo, function(s) match_state(s, schools, school_counts))
+  parts  <- parts[!vapply(parts, is.null, logical(1))]
+  new_dp <- if (length(parts)) st_transform(do.call(rbind, parts), 4326) else NULL
+  new_sp <- build_state_outlines(todo, new_dp)
+
+  dir.create("data", showWarnings = FALSE)
+  district_polygons <- .merge_polys("data/district_polygons.rds", new_dp, todo, append)
+  state_polygons    <- .merge_polys("data/state_polygons.rds",    new_sp, todo, append)
+
+  if (is.null(district_polygons) || nrow(district_polygons) == 0)
+    stop("No districts matched — nothing written.")
+
+  saveRDS(district_polygons, "data/district_polygons.rds")
+  saveRDS(state_polygons,    "data/state_polygons.rds")
+
+  per_state <- as.data.frame(table(district_polygons$state))
+  names(per_state) <- c("state", "polygons")
+  message(sprintf("\n--- district_polygons.rds: %d polygons across %d state(s) ---",
+                  nrow(district_polygons), length(unique(district_polygons$state))))
+  print(per_state, row.names = FALSE)
+  message(sprintf("--- state_polygons.rds: %d state outline(s) ---", nrow(state_polygons)))
+  if ("Utah" %in% district_polygons$state) {
+    ut_n <- sum(district_polygons$state == "Utah")
+    message(sprintf("Utah check: %d polygons (expected 41).%s", ut_n,
+                    if (ut_n != 41) "  *** review Utah override/matches ***" else ""))
+  }
+  invisible(list(district_polygons = district_polygons,
+                 state_polygons    = state_polygons))
+}
+
+# ---- Standalone execution (full rebuild of every state) ---------------------
+# Skipped when sourced as a module (update_data.R sets the option first).
+if (!isTRUE(getOption("polygons.source.only"))) {
+  build_district_polygons(target_states = NULL, append = FALSE)
 }

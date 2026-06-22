@@ -775,6 +775,44 @@ button:focus-visible,
 #map { position: absolute !important; inset: 0 !important; }
 .leaflet-container { background: #eef3f9 !important; }
 
+/* State count bubble (default overview): one pill per state showing its total
+   number of high schools. Rendered as a label-only marker; the dark pill stays
+   legible over any state fill color, and pointer-events:none lets hover/click
+   pass through to the state polygon underneath (KPI hover + drill-in). */
+.leaflet-tooltip.state-count-tip {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.leaflet-tooltip.state-count-tip::before { display: none !important; }
+.state-count-badge {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-weight: 700; font-size: 13px;
+  padding: 5px 11px; border-radius: 999px;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.35);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  /* Re-enable pointer events (the parent tooltip sets none) so the bubble is a
+     real click target that drills into its state. */
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.state-count-badge:hover {
+  background: var(--color-primary, #2563eb);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.45);
+}
+.state-count-badge .scb-label {
+  font-weight: 600; font-size: 11px; opacity: 0.82;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+
 /* KPI panel (top center) */
 .kpi-panel {
   position: absolute;
@@ -1332,6 +1370,9 @@ button:focus-visible,
   z-index: 600;
   display: flex; flex-direction: column;
 }
+/* At the school drill level the rankings list sits above the detail card in the
+   right column, so cap the card to the bottom ~44% to tile without overlap. */
+.detail-panel.detail-compact { max-height: calc(44vh); }
 .detail-body { padding: 18px; overflow-y: auto; }
 .detail-eyebrow {
   font-size: 12px; font-weight: 700;
@@ -1396,6 +1437,153 @@ button:focus-visible,
   font-size: 27px; display: block; margin-bottom: 8px;
   color: var(--text-tertiary);
 }
+
+/* ===================== STATE RANKING PANEL ===================== */
+.state-rank-panel {
+  position: absolute;
+  top: 20px; right: 20px;
+  width: 348px;
+  z-index: 600;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.state-rank-panel .panel-head { border-bottom: 1px solid var(--border-color); }
+.srank-info {
+  display: inline-flex; align-items: center;
+  color: var(--color-primary); opacity: 0.6; cursor: help;
+  transition: opacity 0.15s ease;
+}
+.srank-info:hover { opacity: 1; }
+.srank-subhead {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px;
+  font-size: 11.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-color);
+}
+.srank-subhead svg { color: var(--color-primary); font-size: 13px; flex-shrink: 0; }
+/* Drill-down breadcrumb bar (All States > State > District) */
+.srank-crumbs-bar {
+  padding: 7px 14px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-color);
+}
+.rank-crumbs {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  font-size: 12px; line-height: 1.35;
+}
+.rank-crumb { display: inline-flex; align-items: center; max-width: 100%; }
+.rank-crumb-link {
+  color: var(--color-primary); font-weight: 600; cursor: pointer;
+  text-decoration: none;
+}
+.rank-crumb-link:hover { text-decoration: underline; }
+.rank-crumb-cur {
+  color: var(--text-primary); font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rank-crumb-sep {
+  display: inline-flex; align-items: center;
+  color: var(--text-tertiary); opacity: 0.7; font-size: 11px;
+}
+.srank-body { padding: 4px 8px 6px; overflow: hidden; }
+.srank-foot {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+  font-size: 11px; line-height: 1.4; color: var(--text-tertiary);
+}
+.srank-foot svg { color: var(--color-primary); font-size: 12px; flex-shrink: 0; margin-top: 1px; }
+
+/* DT overrides — compact, clean ranking table */
+.state-rank-panel table.dataTable {
+  font-size: 12.5px; border-collapse: collapse !important; margin: 0 !important;
+  width: 100% !important;
+}
+.state-rank-panel table.dataTable thead th {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.03em; color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-color-strong) !important;
+  border-top: 0 !important;
+  padding: 7px 8px !important; background: var(--bg-card-solid);
+}
+.state-rank-panel table.dataTable tbody td {
+  padding: 6px 8px !important;
+  border-top: 1px solid #f1f5f9 !important;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.state-rank-panel table.dataTable tbody tr { cursor: pointer; transition: background 0.1s ease; }
+.state-rank-panel table.dataTable tbody tr:hover td { background: var(--color-primary-tint) !important; }
+.state-rank-panel table.dataTable tbody tr.selected td {
+  background: var(--color-primary-soft) !important;
+}
+.state-rank-panel table.dataTable tbody tr.selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
+.state-rank-panel .dataTables_scrollBody::-webkit-scrollbar { width: 6px; }
+.state-rank-panel .dataTables_scrollBody::-webkit-scrollbar-thumb {
+  background: #e2e8f0; border-radius: 3px;
+}
+.state-rank-panel .dataTables_scrollHead { border-radius: 0; }
+/* Collapse on screens too narrow to hold both side panels + the KPI bar. */
+@media (max-width: 1280px) { .state-rank-panel { width: 300px; } }
+@media (max-width: 1040px) { .state-rank-panel { display: none !important; } }
+
+/* ===================== DATA COVERAGE NOTES MODAL ===================== */
+.dn-link, .footer-link {
+  color: var(--color-primary); font-weight: 600; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.dn-link:hover, .footer-link:hover { color: var(--color-primary-700); }
+.footer-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  text-decoration: none; font-weight: 600;
+}
+.footer-link:hover { text-decoration: underline; }
+.data-notes { font-family: 'Inter', sans-serif; color: var(--text-primary); }
+.dn-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 18px; }
+.dn-head-icon {
+  width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--color-primary-soft); color: var(--color-primary); font-size: 22px;
+}
+.dn-title { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.dn-lead { margin: 0; font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+.dn-reasons { display: grid; gap: 10px; margin-bottom: 20px; }
+.dn-reason {
+  display: flex; gap: 12px; padding: 12px 14px;
+  background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 12px;
+}
+.dn-reason-icon { color: var(--color-primary); font-size: 17px; flex-shrink: 0; margin-top: 1px; }
+.dn-reason-title { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+.dn-reason-body { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.dn-subhead {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-tertiary); margin: 0 0 10px;
+}
+.dn-states { display: grid; gap: 10px; }
+.dn-state {
+  padding: 12px 14px; background: #ffffff;
+  border: 1px solid var(--border-color); border-left: 3px solid var(--color-primary);
+  border-radius: 10px;
+}
+.dn-state-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin-bottom: 8px;
+}
+.dn-state-name { font-size: 15px; font-weight: 700; }
+.dn-state-count { font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.dn-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.dn-pill {
+  font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+  background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;
+}
+.dn-state-detail { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.dn-foot { margin: 16px 0 0; font-size: 13px; color: var(--text-tertiary); font-style: italic; }
 
 /* Map footer */
 .map-footer {
@@ -2604,6 +2792,32 @@ bslib::page_navbar(
         )
       ),
 
+      # State ranking panel (right side) — visible only in the all-states view.
+      # Ranks states by an equal-weighted average of reading/math/science
+      # proficiency. Click a row to drill into that state.
+      div(class = "glass state-rank-panel", id = "state_rank_panel",
+        div(class = "panel-head",
+          div(class = "panel-title",
+            bsicons::bs_icon("trophy-fill"), span("Rankings")),
+          bslib::tooltip(
+            span(class = "srank-info", bsicons::bs_icon("info-circle")),
+            "Proficiency Index = the average of each group's reading, math & science proficiency (only the subjects actually reported). Higher is better; graduation and AP are excluded on purpose. Click a row to drill in: state → district → school.",
+            placement = "left"
+          )
+        ),
+        div(class = "srank-crumbs-bar",
+          uiOutput("rank_breadcrumb")
+        ),
+        div(class = "srank-body",
+          DT::DTOutput("state_rank_table")
+        ),
+        div(class = "srank-foot",
+          bsicons::bs_icon("info-circle"),
+          span("Index = avg of reading, math & science (subjects reported). Click a row to drill in; use the breadcrumb to go back. Blank = not reported — ",
+               actionLink("data_coverage_info", "why?", class = "dn-link"))
+        )
+      ),
+
       # Map footer
       div(class = "map-footer",
         div(class = "footer-left",
@@ -2614,6 +2828,9 @@ bslib::page_navbar(
           span("·"), span("U.S. Census / ArcGIS / OSM"), span("·"), span("Census TIGER 2023")
         ),
         div(class = "footer-right",
+          actionLink("data_coverage_info_foot", tagList(
+            bsicons::bs_icon("clipboard2-data"), "Data coverage"), class = "footer-link"),
+          span("·"),
           bsicons::bs_icon("info-circle"),
           span("Hover markers for scorecards · Click polygons to filter by district")
         )

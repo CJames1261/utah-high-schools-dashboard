@@ -35,6 +35,35 @@ function(input, output, session) {
     df
   })
 
+  # ---- Map zoom level: "overview" vs "detail" -------------------------------
+  # OVERVIEW = the pure default (all states selected, no district/school): the
+  # map shows one shape + one count bubble per state. Any narrowing — a subset
+  # of states, or a chosen district/school — flips to DETAIL, which breaks out
+  # the individual district polygons and per-school markers.
+  all_states_selected <- function() {
+    s <- input$states
+    is.null(s) || length(s) == 0 || setequal(s, all_states)
+  }
+  map_mode <- reactive({
+    if (all_states_selected() &&
+        (input$district %||% "All districts") == "All districts" &&
+        (input$school   %||% "All schools")   == "All schools") "overview" else "detail"
+  })
+
+  # In DETAIL mode, which states' district polygons to draw: the selected subset
+  # if one is chosen, otherwise the state(s) of the chosen school/district (so
+  # picking a single district while all states are selected only draws that
+  # district's home state, not all 1,300+ polygons).
+  focus_states <- reactive({
+    s <- input$states
+    if (!is.null(s) && length(s) > 0 && !setequal(s, all_states)) return(s)
+    if ((input$school %||% "All schools") != "All schools")
+      return(unique(schools$state[schools$school_name == input$school]))
+    if ((input$district %||% "All districts") != "All districts")
+      return(unique(schools$state[schools$district == input$district]))
+    all_states
+  })
+
   # When a school is picked from the legend search, the district filter is
   # switched to that school's district — which would normally reset the School
   # dropdown to "All schools". We stash the desired school here so the observer
@@ -88,57 +117,110 @@ function(input, output, session) {
                 DATA_BBOX$lng2, DATA_BBOX$lat2)
   })
 
-  # ---- Draw district polygons for the selected states -----------------------
-  # Redraws (clear + re-add) whenever the state filter changes, so only the
-  # chosen states' district areas appear, colored by state. Each polygon's
-  # label is its pre-built KPI scorecard (polygon_hover_labels, aligned to
-  # district_polygons rows in global.R), subset to the same rows. layerId is a
-  # "State || District" composite so same-named districts in different states
-  # stay distinct on the map.
+  # ---- Draw the map's polygon layer (two zoom levels) -----------------------
+  # Redraws (clear + re-add) whenever the state filter changes:
+  #   * DEFAULT (all states selected) -> one single-color shape per STATE with a
+  #     state-average hover card. Clicking a state drills in (see shape_click).
+  #   * SUBSET (a state clicked or the filter narrowed) -> the individual
+  #     district polygons for the selected states, with district-average hovers.
+  hover_opts <- labelOptions(
+    direction = "auto",
+    sticky    = TRUE,             # follow the cursor across large polygons
+    opacity   = 1,
+    className = "district-hover-tooltip"
+  )
+
   observe({
-    sel_states <- input$states
-    idx <- if (is.null(sel_states) || length(sel_states) == 0) {
-      seq_len(nrow(district_polygons))
-    } else {
-      which(district_polygons$state %in% sel_states)
-    }
-    log_evt("polygon obs", sprintf("drawing %d / %d district polygons",
-                                   length(idx), nrow(district_polygons)))
-
     proxy <- leafletProxy("map") %>% clearShapes()
-    if (length(idx) == 0) return()
 
-    polys <- district_polygons[idx, ]
-    polys$poly_id <- paste(polys$state, polys$usnews_district, sep = " || ")
-    proxy %>% addPolygons(
-      data        = polys,
-      fillColor   = ~state_pal(state),
-      fillOpacity = 0.35,
-      color       = "#333",
-      weight      = 1,
-      label       = polygon_hover_labels[idx],
-      labelOptions = labelOptions(
-        direction = "auto",
-        sticky    = TRUE,           # follow the cursor across large polygons
-        opacity   = 1,
-        className = "district-hover-tooltip"
-      ),
-      layerId     = ~poly_id,
-      group       = "districts",
-      highlightOptions = highlightOptions(
-        weight = 3, color = "#000", fillOpacity = 0.55, bringToFront = FALSE
+    if (map_mode() == "overview") {
+      # ----- State-level choropleth (default overview) -----
+      log_evt("polygon obs", sprintf("state view: %d state shapes",
+                                     nrow(state_polygons)))
+      if (nrow(state_polygons) == 0) return()
+      proxy %>% addPolygons(
+        data        = state_polygons,
+        fillColor   = ~state_pal(state),
+        fillOpacity = 0.30,
+        color       = "#333",
+        weight      = 1.2,
+        label       = state_hover_labels,
+        labelOptions = hover_opts,
+        layerId     = ~state,
+        group       = "states",
+        highlightOptions = highlightOptions(
+          weight = 3, color = "#000", fillOpacity = 0.50, bringToFront = FALSE
+        )
       )
-    )
+    } else {
+      # ----- District-level (drilled into the focus states) -----
+      idx <- which(district_polygons$state %in% focus_states())
+      log_evt("polygon obs", sprintf("district view: %d / %d district polygons",
+                                     length(idx), nrow(district_polygons)))
+      if (length(idx) == 0) return()
+      polys <- district_polygons[idx, ]
+      # "State || District" composite keeps same-named districts in different
+      # states distinct on the map.
+      polys$poly_id <- paste(polys$state, polys$usnews_district, sep = " || ")
+      proxy %>% addPolygons(
+        data        = polys,
+        fillColor   = ~state_pal(state),
+        fillOpacity = 0.35,
+        color       = "#333",
+        weight      = 1,
+        label       = polygon_hover_labels[idx],
+        labelOptions = hover_opts,
+        layerId     = ~poly_id,
+        group       = "districts",
+        highlightOptions = highlightOptions(
+          weight = 3, color = "#000", fillOpacity = 0.55, bringToFront = FALSE
+        )
+      )
+    }
   })
 
   # ---- Update markers when the filter changes -------------------------------
   observe({
-    df <- filtered() %>% filter(!is.na(latitude) & !is.na(longitude))
-    log_evt("markers obs", sprintf("rendering %d circle markers", nrow(df)))
-
     proxy <- leafletProxy("map") %>%
       clearMarkers() %>%
       clearMarkerClusters()
+
+    # OVERVIEW: one count bubble per state (total high schools), instead of every
+    # individual school marker. The bubble is a label-only marker; its pill has
+    # pointer-events:none so hover/click fall through to the state polygon
+    # (state-average KPI on hover, drill-in on click).
+    if (map_mode() == "overview") {
+      ss <- state_summary[is.finite(state_summary$lng) &
+                          is.finite(state_summary$lat), ]
+      log_evt("markers obs", sprintf("overview: %d state count bubbles", nrow(ss)))
+      if (nrow(ss) > 0) {
+        # The badge is the obvious click target, so make it drill into its state
+        # directly (onclick -> state_pick). The state polygon underneath is also
+        # clickable (shape_click), so either lands the user in that state.
+        badges <- lapply(seq_len(nrow(ss)), function(i)
+          htmltools::HTML(sprintf(
+            "<div class='state-count-badge' onclick=\"Shiny.setInputValue('state_pick','%s',{priority:'event'})\">%s <span class='scb-label'>school%s</span></div>",
+            ss$state[i],
+            formatC(ss$n_schools[i], big.mark = ","),
+            if (ss$n_schools[i] == 1) "" else "s")))
+        proxy %>% addLabelOnlyMarkers(
+          lng   = ss$lng, lat = ss$lat,
+          label = badges,
+          labelOptions = labelOptions(
+            noHide = TRUE, direction = "center", textOnly = TRUE,
+            className = "state-count-tip"
+          ),
+          group = "schools"
+        )
+      }
+      proxy %>% fitBounds(DATA_BBOX$lng1, DATA_BBOX$lat1,
+                          DATA_BBOX$lng2, DATA_BBOX$lat2)
+      return()
+    }
+
+    # DETAIL: individual school markers for the current filter.
+    df <- filtered() %>% filter(!is.na(latitude) & !is.na(longitude))
+    log_evt("markers obs", sprintf("detail: rendering %d circle markers", nrow(df)))
 
     if (nrow(df) == 0) {
       log_evt("markers obs", "no rows -> bailing out without fitBounds")
@@ -186,26 +268,15 @@ function(input, output, session) {
       )
     )
 
-    # Auto-fit:
+    # Auto-fit (detail mode only — the overview frames DATA_BBOX above):
     #   1. A single specific school selected -> zoom in tight on it.
-    #   2. Default view (all states, no district/school) -> the framed DATA_BBOX
-    #      so far-flung AK/HI points don't stretch the view across the Pacific.
-    #   3. Otherwise -> fit to the bounding box of the schools in view (one
+    #   2. Otherwise -> fit to the bounding box of the schools in view (one
     #      state, one district, etc.), which naturally zooms to AK or HI when
     #      they're the selection.
-    sel_states <- input$states
-    is_default_view <-
-      (is.null(sel_states) || setequal(sel_states, all_states)) &&
-      input$district == "All districts" && input$school == "All schools"
-
     if (input$school != "All schools" && nrow(df) == 1) {
       log_evt("auto-fit", sprintf("branch=school  zoom 14 on %s",
                                   df$school_name))
       proxy %>% setView(lng = df$longitude, lat = df$latitude, zoom = 14)
-    } else if (is_default_view) {
-      log_evt("auto-fit", "branch=default  framing DATA_BBOX")
-      proxy %>% fitBounds(DATA_BBOX$lng1, DATA_BBOX$lat1,
-                          DATA_BBOX$lng2, DATA_BBOX$lat2)
     } else {
       log_evt("auto-fit", sprintf("branch=schools  bbox=[%.3f,%.3f,%.3f,%.3f]",
                                   min(df$longitude), min(df$latitude),
@@ -239,7 +310,10 @@ function(input, output, session) {
     }
   })
 
-  # ---- Clicking a polygon selects that district in the sidebar --------------
+  # ---- Clicking a polygon ---------------------------------------------------
+  # In the default state view, clicking a STATE drills into it (narrows the
+  # state filter to that one state, which flips the map to its districts). In
+  # the district view, clicking a DISTRICT selects it in the sidebar.
   observeEvent(input$map_shape_click, {
     click <- input$map_shape_click
     log_evt("shape_click",
@@ -248,25 +322,267 @@ function(input, output, session) {
                     click$lat %||% NA, click$lng %||% NA,
                     length(click$id)))
 
-    if (!isTRUE(click$group == "districts")) {
-      log_evt("shape_click", "  -> not a district polygon, ignoring")
-      return()
-    }
     id <- click$id
     if (length(id) != 1) {
       log_evt("shape_click", "  -> id length != 1, ignoring")
       return()
     }
-    # layerId is a "State || District" composite; recover the district name.
-    parts <- strsplit(as.character(id), " || ", fixed = TRUE)[[1]]
-    dist  <- if (length(parts) == 2) parts[[2]] else as.character(id)
-    if (dist %in% schools$district) {
-      log_evt("shape_click", sprintf("  -> updating input$district to %s", dist))
-      updateSelectInput(session, "district", selected = dist)
-    } else {
-      log_evt("shape_click", sprintf("  -> %s not in schools$district, ignoring", dist))
+
+    if (isTRUE(click$group == "states")) {
+      if (id %in% all_states) {
+        log_evt("shape_click", sprintf("  -> state '%s' clicked, drilling to its districts", id))
+        updateSelectInput(session, "states", selected = id)
+      }
+      return()
+    }
+
+    if (isTRUE(click$group == "districts")) {
+      # layerId is a "State || District" composite; recover the district name.
+      parts <- strsplit(as.character(id), " || ", fixed = TRUE)[[1]]
+      dist  <- if (length(parts) == 2) parts[[2]] else as.character(id)
+      if (dist %in% schools$district) {
+        log_evt("shape_click", sprintf("  -> updating input$district to %s", dist))
+        updateSelectInput(session, "district", selected = dist)
+      } else {
+        log_evt("shape_click", sprintf("  -> %s not in schools$district, ignoring", dist))
+      }
+      return()
     }
   })
+
+  # ---- Clicking a state count bubble drills into that state -----------------
+  observeEvent(input$state_pick, {
+    pick <- input$state_pick
+    log_evt("state_pick", sprintf("count bubble clicked -> %s", pick))
+    if (is.character(pick) && length(pick) == 1 && pick %in% all_states) {
+      updateSelectInput(session, "states", selected = pick)
+    }
+  })
+
+  # =========================================================================
+  # RANKING TABLE (right side) — drill-down: states -> districts -> schools
+  # =========================================================================
+  # The table's level is DERIVED from the active filters, so the table and the
+  # map always stay in sync (a row click just advances the same filters the map
+  # already reads):
+  #   * all states selected             -> rank every STATE
+  #   * exactly one state, no district   -> rank that state's DISTRICTS
+  #   * a district selected              -> rank that district's SCHOOLS
+  rank_level <- reactive({
+    st <- input$states
+    one_state <- !is.null(st) && length(st) == 1 && st %in% all_states
+    if ((input$district %||% "All districts") != "All districts") return("school")
+    if (one_state) return("district")
+    "state"
+  })
+
+  # The state in context when drilling below the top level. In the normal drill
+  # path input$states is the single chosen state; fall back to the focus state
+  # (e.g. a district picked via search while all states were still selected).
+  rank_state <- reactive({
+    st <- input$states
+    if (!is.null(st) && length(st) == 1 && st %in% all_states) return(st)
+    focus_states()[1]
+  })
+
+  # The ranked data frame for the current level, plus the entity (row) names in
+  # display order so a row click maps straight back to a state/district/school.
+  rank_data <- reactive({
+    lvl <- rank_level()
+    if (lvl == "district") {
+      st <- rank_state()
+      rk <- compute_prof_ranking(dplyr::filter(schools, state == st), "district")
+      list(level = lvl, df = rk, entities = rk$district, name_header = "District")
+    } else if (lvl == "school") {
+      st <- rank_state(); dsel <- input$district
+      rk <- compute_prof_ranking(
+        dplyr::filter(schools, state == st, district == dsel), "school_name")
+      list(level = lvl, df = rk, entities = rk$school_name, name_header = "School")
+    } else {
+      list(level = "state", df = state_rankings,
+           entities = state_rankings$state, name_header = "State")
+    }
+  })
+
+  output$state_rank_table <- DT::renderDT({
+    rd   <- rank_data()
+    # At the school level the detail card shares the right column, so cap the
+    # list to the top ~half; otherwise the list uses the full column height.
+    scroll_y <- if (rd$level == "school") "calc(52vh - 140px)" else "calc(100vh - 360px)"
+    fmt1 <- function(x) ifelse(is.na(x) | is.nan(x), NA_real_, round(x, 1))
+    tab  <- data.frame(
+      `#`   = rd$df$rank,
+      Name  = rd$entities,
+      Read  = fmt1(rd$df$reading),
+      Math  = fmt1(rd$df$math),
+      Sci   = fmt1(rd$df$science),
+      Index = fmt1(rd$df$prof_index),
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+    vals    <- tab$Index[is.finite(tab$Index)]
+    idx_rng <- if (length(vals)) range(vals) else c(0, 100)
+
+    DT::datatable(
+      tab,
+      rownames  = FALSE,
+      colnames  = c("#", rd$name_header, "Read", "Math", "Sci", "Index"),
+      selection = "single",
+      class     = "compact stripe hover row-border state-rank-dt",
+      options   = list(
+        dom            = "t",
+        paging         = FALSE,
+        scrollY        = scroll_y,
+        scrollCollapse = TRUE,
+        # Keep the data's order (already best-first, unranked last); don't
+        # auto-sort the blank "#" column, which would float them to the top.
+        order          = list(),
+        columnDefs     = list(
+          list(className = "dt-center", targets = c(0, 2, 3, 4, 5)),
+          list(width = "34px", targets = 0)
+        )
+      )
+    ) %>%
+      DT::formatRound(c("Read", "Math", "Sci", "Index"), digits = 1) %>%
+      DT::formatStyle("#",    color = "#64748b", fontWeight = "700") %>%
+      DT::formatStyle("Name", fontWeight = "600", color = "#0f172a") %>%
+      DT::formatStyle(
+        "Index",
+        fontWeight = "700", color = "#0f172a",
+        background = DT::styleColorBar(idx_rng, "#bfdbfe"),
+        backgroundSize     = "98% 62%",
+        backgroundRepeat   = "no-repeat",
+        backgroundPosition = "center"
+      )
+  }, server = FALSE)
+
+  # Breadcrumb header — All States > {State} > {District}; earlier crumbs are
+  # clickable to climb back up the hierarchy.
+  output$rank_breadcrumb <- renderUI({
+    lvl <- rank_level()
+    sep <- span(class = "rank-crumb-sep", bsicons::bs_icon("chevron-right"))
+    root <- if (lvl == "state")
+      span(class = "rank-crumb rank-crumb-cur", "All States")
+    else
+      actionLink("rank_crumb_root", "All States",
+                 class = "rank-crumb rank-crumb-link")
+    if (lvl == "state")
+      return(div(class = "rank-crumbs", root))
+    if (lvl == "district")
+      return(div(class = "rank-crumbs", root, sep,
+                 span(class = "rank-crumb rank-crumb-cur", rank_state())))
+    div(class = "rank-crumbs", root, sep,
+        actionLink("rank_crumb_state", rank_state(),
+                   class = "rank-crumb rank-crumb-link"),
+        sep, span(class = "rank-crumb rank-crumb-cur", input$district))
+  })
+
+  # Crumb clicks reset the relevant filters (req() ignores the unclicked/0 value
+  # the link resets to each time the breadcrumb is re-rendered).
+  observeEvent(input$rank_crumb_root, {
+    req(input$rank_crumb_root)
+    log_evt("rank_crumb", "root -> reset to all states")
+    updateSelectInput(session, "states",   selected = all_states)
+    updateSelectInput(session, "district", selected = "All districts")
+    updateSelectInput(session, "school",   selected = "All schools")
+  }, ignoreInit = TRUE)
+  observeEvent(input$rank_crumb_state, {
+    req(input$rank_crumb_state)
+    log_evt("rank_crumb", sprintf("state -> back to %s districts", rank_state()))
+    updateSelectInput(session, "district", selected = "All districts")
+    updateSelectInput(session, "school",   selected = "All schools")
+  }, ignoreInit = TRUE)
+
+  # Keep the panel visible at every level; clear any stale row highlight when the
+  # level changes. At the school level the detail card shares the right column,
+  # so shrink it (CSS .detail-compact) to tile beneath the school list.
+  observeEvent(rank_level(), {
+    shinyjs::show("state_rank_panel")
+    DT::dataTableProxy("state_rank_table") %>% DT::selectRows(NULL)
+    if (rank_level() == "school") {
+      shinyjs::addClass("detail_panel", "detail-compact")
+    } else {
+      shinyjs::removeClass("detail_panel", "detail-compact")
+    }
+  }, ignoreInit = TRUE)
+
+  # Clicking a row advances the drill-down: state -> its districts, district ->
+  # its schools, school -> opens its detail card. Rows are in display order, so
+  # the selected index maps back to the entity via rank_data()$entities.
+  observeEvent(input$state_rank_table_rows_selected, {
+    i <- input$state_rank_table_rows_selected
+    if (length(i) != 1) return()
+    rd  <- rank_data()
+    ent <- rd$entities[i]
+    if (is.na(ent)) return()
+    log_evt("rank_row_click", sprintf("%s level, row %d -> %s", rd$level, i, ent))
+    if (rd$level == "state") {
+      if (ent %in% all_states) updateSelectInput(session, "states", selected = ent)
+    } else if (rd$level == "district") {
+      updateSelectInput(session, "district", selected = ent)
+    } else {
+      updateSelectInput(session, "school", selected = ent)
+    }
+  })
+
+  # ---- "Why are some values blank?" data-coverage info modal ----------------
+  # Data-driven from coverage_notes (global.R): the per-state list of KPIs that
+  # U.S. News doesn't publish at all, plus the general reasons values go blank.
+  show_data_notes <- function() {
+    reason <- function(icon, title, body)
+      div(class = "dn-reason",
+        div(class = "dn-reason-icon", bsicons::bs_icon(icon)),
+        div(div(class = "dn-reason-title", title),
+            div(class = "dn-reason-body", body)))
+
+    prof       <- c("Math Proficiency", "Reading Proficiency", "Science Proficiency")
+    gap_states <- Filter(function(x) length(x$missing) > 0, coverage_notes)
+
+    state_blocks <- lapply(gap_states, function(x) {
+      detail <- if (all(prof %in% x$missing))
+        "U.S. News shows only a State Assessment Proficiency rank for this state — not the underlying math, reading, or science percentages."
+      else
+        "U.S. News doesn't publish this subject for this state's schools (verified against the source pages)."
+      div(class = "dn-state",
+        div(class = "dn-state-head",
+          span(class = "dn-state-name", x$state),
+          span(class = "dn-state-count",
+               sprintf("%d schools · %d%% ranked", x$n, x$pct_ranked))
+        ),
+        div(class = "dn-pills", lapply(x$missing, function(m) span(class = "dn-pill", m))),
+        div(class = "dn-state-detail", detail)
+      )
+    })
+
+    showModal(modalDialog(
+      easyClose = TRUE, size = "l", footer = modalButton("Got it"),
+      div(class = "data-notes",
+        div(class = "dn-head",
+          div(class = "dn-head-icon", bsicons::bs_icon("clipboard2-data-fill")),
+          div(
+            h3(class = "dn-title", "Why are some values blank?"),
+            p(class = "dn-lead",
+              sprintf("Every metric comes straight from the U.S. News %s Best High Schools data. A cell is blank only when U.S. News itself doesn't publish that value — nothing is dropped here.",
+                      "2025-2026"))
+          )
+        ),
+        div(class = "dn-reasons",
+          reason("trophy-fill", "Unranked schools",
+                 "U.S. News scores and ranks only a share of each state's schools. Unranked schools are still listed, but with no overall score, rank, AP, or proficiency values."),
+          reason("clipboard-x-fill", "Subjects a state doesn't report",
+                 "For some states, U.S. News shows only a proficiency ranking — not the underlying math/reading/science percentages — so those columns are blank for the whole state."),
+          reason("hash", "Ranges instead of numbers",
+                 "A few values are published as ranges ('>= 80%') or 'N/A' rather than an exact number, so they can't be averaged and show as blank.")
+        ),
+        h4(class = "dn-subhead",
+           sprintf("States missing an entire metric (%d)", length(gap_states))),
+        div(class = "dn-states", state_blocks),
+        p(class = "dn-foot",
+          "Every other state reports the full set of metrics for the schools U.S. News ranks.")
+      )
+    ))
+  }
+  observeEvent(input$data_coverage_info,      show_data_notes())
+  observeEvent(input$data_coverage_info_foot, show_data_notes())
 
   # ---- Reset button ---------------------------------------------------------
   observeEvent(input$reset_view, {
@@ -350,6 +666,12 @@ function(input, output, session) {
   current_scope <- function() {
     if (input$school != "All schools") return(list(name = input$school, kind = "school"))
     if (input$district != "All districts") return(list(name = input$district, kind = "district"))
+    # State-level scope: one state selected -> name it; a few -> count them.
+    sel <- input$states
+    if (!is.null(sel) && length(sel) > 0 && !setequal(sel, all_states)) {
+      if (length(sel) == 1) return(list(name = sel, kind = "state"))
+      return(list(name = sprintf("%d states", length(sel)), kind = "state"))
+    }
     list(name = "All states", kind = "all")
   }
 
@@ -365,6 +687,7 @@ function(input, output, session) {
 
     title <- switch(scope$kind,
       "all"      = "All school averages",
+      "state"    = sprintf("%s averages", scope$name),
       "district" = sprintf("%s averages", scope$name),
       "school"   = sprintf("%s scorecard",  scope$name)
     )
@@ -402,15 +725,18 @@ function(input, output, session) {
 
     eyebrow <- switch(scope$kind,
       "all"      = "Currently viewing",
+      "state"    = if (length(input$states %||% character(0)) == 1) "State" else "States",
       "district" = "District",
       "school"   = "School")
 
-    # All-states view: surface the school / district / state counts for the
-    # current selection.
+    # Surface the school / district (/ state) counts for the current selection.
     meta <- if (scope$kind == "all") {
       sprintf("%d schools  ·  %d districts  ·  %d states",
               nrow(df), dplyr::n_distinct(df$state, df$district),
               dplyr::n_distinct(df$state))
+    } else if (scope$kind == "state") {
+      sprintf("%d schools  ·  %d districts",
+              nrow(df), dplyr::n_distinct(df$state, df$district))
     } else {
       sprintf("%d school%s in view", nrow(df), if (nrow(df) == 1) "" else "s")
     }

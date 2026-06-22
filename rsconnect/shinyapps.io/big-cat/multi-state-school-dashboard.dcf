@@ -1,0 +1,10 @@
+name: multi-state-school-dashboard
+title:
+username: big-cat
+account: big-cat
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17537105
+bundleId: 12159529
+url: https://big-cat.shinyapps.io/multi-state-school-dashboard/
+version: 1

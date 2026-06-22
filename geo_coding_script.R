@@ -131,4 +131,4 @@ geocode_addresses <- function(df) {
 
 schools_geo <- geocode_addresses(schools)
 
-#write.csv(schools_geo, "data\school_addresses_geocode.csv", row.names = FALSE)
+write.csv(schools_geo, "data\school_addresses_geocode.csv", row.names = FALSE)

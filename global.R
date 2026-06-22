@@ -35,43 +35,17 @@ options(tigris_use_cache = TRUE)
 DATA_YEAR <- "2022-2023"
 
 # ---- Load school data --------------------------------------------------------
-# Each state lives in its own data/<state>_high_schools.json file, all sharing
-# an identical schema. We discover and stack every one of them into a single
-# data frame, so adding a new state later is just a matter of dropping its JSON
-# into data/ — no edit to this file is required.
-school_files <- list.files("data", pattern = "_high_schools\\.json$",
-                           full.names = TRUE)
+# The full dataset — every school's scraped fields joined to its geocoded
+# coordinates — is pre-built into data/master_data.csv by update_data.R (run
+# that whenever you add a state). Reading the one master CSV keeps this file
+# simple; the stacking / geocoding / joining all lives in the pipeline.
+# guess_max = Inf so sparse numeric columns (e.g. graduation_rate, which many
+# rows leave blank) are still typed numeric, not logical.
+master_path <- "data/master_data.csv"
+if (!file.exists(master_path))
+  stop("data/master_data.csv not found — run `Rscript update_data.R` to build it.")
 
-schools_json <- bind_rows(lapply(school_files, function(path) {
-  df <- fromJSON(path, simplifyDataFrame = TRUE)
-  # Derive a `state` column from the filename (e.g. "alabama_high_schools.json"
-  # -> "Alabama") so rows stay attributable once every state is mixed together.
-  slug <- sub("_high_schools\\.json$", "", basename(path))
-  df$state <- tools::toTitleCase(gsub("_", " ", slug))
-  df
-}))
-
-message(sprintf("Loaded %d schools across %d state file(s): %s",
-                nrow(schools_json), length(school_files),
-                paste(sort(unique(schools_json$state)), collapse = ", ")))
-
-
-# Geocoded coordinates for every school address (all states), produced by
-# geo_coding_script.R via tidygeocoder. Columns: address, latitude, longitude.
-geo_csv <- read_csv("data/school_addresses_geocode.csv", show_col_types = FALSE)
-
-geo <- geo_csv %>%
-  transmute(
-    address   = address,
-    latitude  = latitude,
-    longitude = longitude
-  ) %>%
-  # Some addresses appear multiple times in the CSV (e.g., a building shared
-  # by two schools was geocoded once per row). Keep only one row per address
-  # so the left_join below is one-to-many, not many-to-many.
-  distinct(address, .keep_all = TRUE)
-
-schools <- schools_json %>% left_join(geo, by = "address")
+schools <- read_csv(master_path, show_col_types = FALSE, guess_max = Inf)
 
 # ---- Headline counts (surfaced in the navbar + scope block) ------------------
 # The same district name can appear in more than one state (e.g. a "Washington
@@ -84,6 +58,85 @@ n_districts     <- nrow(dplyr::distinct(schools, state, district))
 message(sprintf("Loaded %d schools across %d state(s), %d districts. %d without coordinates.",
                 n_schools_total, n_states, n_districts,
                 sum(is.na(schools$latitude))))
+
+# Per-state summary for the DEFAULT overview map: the total number of high
+# schools in each state and a single bubble position (the mean of that state's
+# school coordinates). The overview shows one count bubble per state instead of
+# every individual school marker; the per-school markers only appear once a
+# state/district is selected.
+state_summary <- schools %>%
+  dplyr::group_by(state) %>%
+  dplyr::summarise(
+    n_schools = dplyr::n(),
+    lng       = mean(longitude, na.rm = TRUE),
+    lat       = mean(latitude,  na.rm = TRUE),
+    .groups   = "drop"
+  )
+
+# ---- Proficiency ranking (Map tab right-side drill-down table) ---------------
+# Ranks any grouping of schools by an equal-weighted average of reading, math,
+# and science proficiency — the three core-subject KPIs. Graduation and AP are
+# deliberately excluded (a diploma / an AP sitting doesn't certify proficiency).
+# Because all three inputs are the same "% proficient" unit, the composite
+# "Proficiency Index" is simply their mean, so it stays on the readable 0-100
+# scale.
+#
+# `group_col` is the column to rank by: "state" for the top level, "district"
+# within a chosen state, or "school_name" within a chosen district — the Map
+# tab walks state -> district -> school using this one helper, so the index is
+# computed identically at every level.
+#
+# Missing-subject handling (important): a subject with no numeric data for a
+# group averages to NaN — either because no school reports it (e.g. a state that
+# doesn't test science, like Colorado) or because it's only given as a range
+# (">=80%", non-numeric). `rowMeans(..., na.rm = TRUE)` drops such a subject
+# from BOTH the numerator and the denominator, so a no-science group divides by
+# 2, not 3. A group with no proficiency data at all gets NA (sorts last,
+# unranked) rather than a divide-by-zero.
+compute_prof_ranking <- function(df, group_col) {
+  df %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(group_col))) %>%
+    dplyr::summarise(
+      n_schools = dplyr::n(),
+      reading   = mean(reading_proficiency, na.rm = TRUE),
+      math      = mean(math_proficiency,    na.rm = TRUE),
+      science   = mean(science_proficiency, na.rm = TRUE),
+      .groups   = "drop"
+    ) %>%
+    dplyr::mutate(
+      n_subjects = (!is.nan(reading)) + (!is.nan(math)) + (!is.nan(science)),
+      prof_index = ifelse(n_subjects == 0, NA_real_,
+                          rowMeans(cbind(reading, math, science), na.rm = TRUE))
+    ) %>%
+    dplyr::arrange(dplyr::desc(prof_index)) %>%
+    dplyr::mutate(rank = ifelse(is.na(prof_index), NA_integer_, dplyr::row_number()))
+}
+
+# Top-level table: every state ranked. (District/school levels are computed
+# on demand in server.R as the user drills in.)
+state_rankings <- compute_prof_ranking(schools, "state")
+
+# ---- Data coverage notes (the "why are some values blank?" info modal) -------
+# For each state, which KPIs have NO numeric data at all — i.e. U.S. News simply
+# doesn't publish them for that state (verified against the source pages: e.g.
+# Connecticut shows only a proficiency rank, Colorado/Hawaii omit science).
+# Computed from the data so the notes stay accurate as states are added.
+kpi_labels <- c(
+  overall_score       = "Overall Score",        state_rank      = "State Rank",
+  national_rank       = "National Rank",         ap_taken_pct    = "AP Participation",
+  ap_passed_pct       = "AP Pass Rate",          math_proficiency    = "Math Proficiency",
+  reading_proficiency = "Reading Proficiency",   science_proficiency = "Science Proficiency",
+  graduation_rate     = "Graduation Rate"
+)
+coverage_notes <- lapply(sort(unique(schools$state)), function(st) {
+  d    <- schools[schools$state == st, ]
+  miss <- names(kpi_labels)[vapply(names(kpi_labels),
+                                   function(k) all(is.na(d[[k]])), logical(1))]
+  # % of the state's schools that U.S. News actually ranks (have an overall score)
+  pct_ranked <- round(100 * mean(!is.na(d$overall_score)))
+  list(state = st, n = nrow(d), pct_ranked = pct_ranked,
+       missing = unname(kpi_labels[miss]))
+})
 
 # ---- District boundary polygons (pre-built; see build_district_polygons.R) ---
 # District areas for every state are matched to Census TIGER boundaries offline
@@ -113,6 +166,25 @@ if (file.exists(poly_path)) {
   message("NOTE: ", poly_path, " not found — run `Rscript build_district_polygons.R` ",
           "to generate district areas. Showing school markers only for now.")
 }
+
+# State outline polygons drive the DEFAULT view: one single-color shape per
+# state with a state-average hover card. The map only drills into the individual
+# district polygons above once a state is clicked or the state filter narrows to
+# a subset. Built by the same script; falls back to dissolving the district
+# polygons per state, then to an empty sf, if the file isn't present.
+state_poly_path <- "data/state_polygons.rds"
+if (file.exists(state_poly_path)) {
+  state_polygons <- readRDS(state_poly_path)
+} else if (nrow(district_polygons) > 0) {
+  state_polygons <- suppressWarnings(
+    district_polygons %>% dplyr::group_by(state) %>%
+      dplyr::summarise(.groups = "drop")
+  )[, "state"]
+} else {
+  state_polygons <- sf::st_sf(state = character(0),
+                              geometry = sf::st_sfc(crs = 4326))
+}
+message(sprintf("Loaded %d state outline polygon(s).", nrow(state_polygons)))
 
 # ---- Color palettes ----------------------------------------------------------
 # Primary map palette: one distinct color per STATE. At national scale (dozens
@@ -279,6 +351,15 @@ polygon_hover_labels <- lapply(seq_len(nrow(district_polygons)), function(i) {
   nm <- district_polygons$usnews_district[i]
   df <- schools[schools$state == st & schools$district == nm, ]
   district_kpi_card(nm, compute_avg_scorecard(df))
+})
+
+# One KPI card per STATE (shown on the default state choropleth), averaging
+# every school in the state. Reuses the same card component as the district
+# hover so the two zoom levels look consistent.
+state_hover_labels <- lapply(seq_len(nrow(state_polygons)), function(i) {
+  st <- state_polygons$state[i]
+  df <- schools[schools$state == st, ]
+  district_kpi_card(st, compute_avg_scorecard(df))
 })
 
 # Default / reset map view. We frame the BULK of the schools (2nd-98th
