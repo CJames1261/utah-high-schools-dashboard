@@ -39,7 +39,10 @@ load_all_schools <- function() {
   bind_rows(lapply(files, function(path) {
     df <- fromJSON(path, simplifyDataFrame = TRUE)
     slug <- sub("_high_schools\\.json$", "", basename(path))
-    df$state <- tools::toTitleCase(gsub("_", " ", slug))
+    # Filenames use hyphens for multi-word states (new-hampshire_high_schools.json).
+    # Turn BOTH "_" and "-" into spaces so the state reads "New Hampshire", which
+    # matches R's built-in state.name (and the Census NAME column).
+    df$state <- tools::toTitleCase(gsub("[-_]", " ", slug))
     df
   }))
 }
@@ -142,8 +145,11 @@ get_state_districts <- function(abbr) {
 
 # ---- Match one state's U.S. News districts to Census polygons ---------------
 match_state <- function(state_name, schools, school_counts) {
-  abbr <- state_abbr[[state_name]]
-  if (is.null(abbr) || is.na(abbr)) {
+  # Single-bracket lookup returns NA for an unknown state (e.g. DC, a territory,
+  # or a typo) instead of erroring out and halting the whole run — that one state
+  # is just skipped.
+  abbr <- unname(state_abbr[state_name])
+  if (is.na(abbr)) {
     message(sprintf("[%s] no USPS abbreviation; skipping", state_name))
     return(NULL)
   }
