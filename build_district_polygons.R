@@ -50,14 +50,18 @@ load_all_schools <- function() {
 # ---- Name normalization ----------------------------------------------------
 # Smooths over TIGER vs U.S. News naming quirks: case, punctuation, and the
 # various "...School District / Public Schools / County / City" qualifiers.
+# Reduces a district name to a comparable token. It KEEPS any district number
+# (so Wyoming's "Big Horn County School District #1/#2/#3/#4" stay distinct) but
+# drops the "#"/"No." decoration and the type/qualifier words that Census spells
+# out and U.S. News usually omits (Unified, Township, Borough, Regional/Coop...).
 normalize_district <- function(x) {
   x <- tolower(x)
-  x <- gsub("[.,]", " ", x)
-  x <- gsub("\\b(no\\.?\\s*)?[0-9]+\\b", " ", x)     # district numbering: "No. 58" or bare "58"
-  # Census spells out district types that U.S. News drops from the short name
-  # (e.g. Kansas "Abilene Unified School District 435" vs U.S. News "Abilene").
+  x <- gsub("[.,#]", " ", x)                         # punctuation incl. "#"; numbers stay
+  x <- gsub("\\bno\\b", " ", x)                      # the "No." label (the number itself stays)
   x <- gsub("\\bunified\\b",      " ", x)
   x <- gsub("\\bconsolidated\\b", " ", x)
+  x <- gsub("\\b(township|borough|boro|village|town)\\b", " ", x)
+  x <- gsub("\\b(regional|reg|cooperative|coop)\\b",      " ", x)
   x <- gsub("\\bpublic school district\\b", " ", x)
   x <- gsub("\\bpublic schools?\\b",        " ", x)
   x <- gsub("\\bschool system\\b",          " ", x)
@@ -70,6 +74,11 @@ normalize_district <- function(x) {
   x <- gsub("\\s+",                         " ", x)
   trimws(x)
 }
+
+# Drop the trailing/embedded district number — used for the fallback pass, where
+# U.S. News omitted the number entirely (Idaho "Aberdeen" -> Census "Aberdeen
+# School District 58"). Only used when the number-stripped name is unambiguous.
+strip_numbers <- function(x) trimws(gsub("\\s+", " ", gsub("\\b[0-9]+\\b", " ", x)))
 
 # Utah override map — preserved verbatim so Utah's 41 traditional districts keep
 # matching exactly as verified.
@@ -163,7 +172,14 @@ match_state <- function(state_name, schools, school_counts) {
   cen$norm <- normalize_district(cen$NAME)
   cen$prio <- match(cen$dtype, TYPE_PRIORITY)
   cen <- cen[order(cen$prio), ]          # higher-priority types first
-  cen <- cen[!duplicated(cen$norm), ]    # one polygon per normalized name
+  cen <- cen[!duplicated(cen$norm), ]    # one polygon per (number-keeping) name
+
+  # Number-stripped key + which of those keys point to exactly one district, so
+  # the fallback pass never matches an ambiguous name (e.g. Wyoming's four
+  # "Big Horn County" districts) to the wrong polygon.
+  cen$norm0    <- strip_numbers(cen$norm)
+  n0_counts    <- table(cen$norm0)
+  cen$n0_unique <- as.integer(n0_counts[cen$norm0]) == 1L
 
   usnews_names <- sort(unique(schools$district[schools$state == state_name]))
 
@@ -172,9 +188,16 @@ match_state <- function(state_name, schools, school_counts) {
       cn <- usnews_to_census_district[[nm]]
       j  <- which(cen$NAME == cn)
       if (!length(j)) j <- which(cen$norm == normalize_district(cn))
-    } else {
-      j <- which(cen$norm == normalize_district(nm))
+      return(if (length(j)) j[1] else NA_integer_)
     }
+    un <- normalize_district(nm)
+    # Pass 1: exact match keeping the number (handles Wyoming "#1" vs "1").
+    j <- which(cen$norm == un)
+    if (length(j)) return(j[1])
+    # Pass 2: U.S. News dropped the number (Idaho/Kansas) — match the
+    # number-stripped name, but only where it's unambiguous in this state.
+    un0 <- strip_numbers(un)
+    j <- which(cen$norm0 == un0 & cen$n0_unique)
     if (length(j)) j[1] else NA_integer_
   }, integer(1))
 
