@@ -990,8 +990,16 @@ button:focus-visible,
   border-radius: 3px;
   padding: 2px 0;
   font-weight: 700; color: #0f172a;
+  /* White halo keeps the value readable even over the darkest red/green bars. */
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.95), 0 0 2px rgba(255, 255, 255, 0.95);
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+/* Muted 'NA' shown in the rankings table where a state/district has no score. */
+.state-rank-dt .cell-na {
+  color: #94a3b8;
+  font-style: italic;
+  font-weight: 600;
 }
 
 /* Tone down the default Bootstrap tooltip to match the app's look. */
@@ -1251,6 +1259,21 @@ button:focus-visible,
   color: var(--color-primary);
   transform: translateY(-1px);
 }
+/* 'Back to {state}' button — only shown when drilled into a district/school, so
+   you can step up one level (to the state) instead of resetting all the way out.
+   Soft blue to read as the suggested action, sits just above 'Reset view'. */
+.btn-back-state {
+  margin-bottom: 8px;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: var(--color-primary);
+}
+.btn-back-state:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
 
 /* ===================== DISTRICT LEGEND ===================== */
 .legend-section {
@@ -1410,6 +1433,23 @@ button:focus-visible,
   flex-shrink: 0;
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
+
+/* Schools sub-list — expands beneath the ACTIVE district so the user can pick a
+   school and zoom the map to it. Indented and tied to the district by a left
+   rail; rows are a touch smaller than district rows. */
+.legend-school-sub {
+  display: flex; flex-direction: column; gap: 1px;
+  margin: 1px 0 8px 17px;
+  padding-left: 8px;
+  border-left: 2px solid var(--color-primary-tint);
+}
+.legend-subitem { padding: 5px 8px 5px 6px; }
+.legend-subitem .legend-item-name { font-size: 12.5px; }
+.legend-subitem .legend-item-swatch { width: 10px; height: 10px; }
+.legend-subitem .legend-item-arrow { opacity: 0.45; }
+.legend-subitem:hover .legend-item-arrow { opacity: 1; color: var(--color-primary); }
+.legend-subitem.is-active { background: var(--color-primary-tint); }
+.legend-subitem.is-active .legend-item-name { color: var(--color-primary); }
 
 /* Empty state */
 .legend-empty {
@@ -2874,6 +2914,9 @@ bslib::page_navbar(
               choices  = c("All schools", sort(unique(schools$school_name))),
               selected = "All schools", width = "100%")
           ),
+          # Appears only when drilled into a district/school: steps back up to
+          # the state level (all its districts) without resetting to all states.
+          uiOutput("back_to_state_ui"),
           actionButton("reset_view",
             label = tagList(bsicons::bs_icon("arrow-counterclockwise"), "Reset view"),
             class = "btn-modern", style = "width:100%"),

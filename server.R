@@ -143,7 +143,7 @@ function(input, output, session) {
       proxy %>% addPolygons(
         data        = state_polygons,
         fillColor   = ~index_color(prof_index),
-        fillOpacity = 0.30,
+        fillOpacity = 0.72,
         color       = "#333",
         weight      = 1.2,
         label       = state_hover_labels,
@@ -151,7 +151,7 @@ function(input, output, session) {
         layerId     = ~state,
         group       = "states",
         highlightOptions = highlightOptions(
-          weight = 3, color = "#000", fillOpacity = 0.50, bringToFront = FALSE
+          weight = 3, color = "#000", fillOpacity = 0.88, bringToFront = FALSE
         )
       )
     } else {
@@ -167,7 +167,7 @@ function(input, output, session) {
       proxy %>% addPolygons(
         data        = polys,
         fillColor   = ~index_color(prof_index),
-        fillOpacity = 0.35,
+        fillOpacity = 0.72,
         color       = "#333",
         weight      = 1,
         label       = polygon_hover_labels[idx],
@@ -175,7 +175,7 @@ function(input, output, session) {
         layerId     = ~poly_id,
         group       = "districts",
         highlightOptions = highlightOptions(
-          weight = 3, color = "#000", fillOpacity = 0.55, bringToFront = FALSE
+          weight = 3, color = "#000", fillOpacity = 0.88, bringToFront = FALSE
         )
       )
     }
@@ -470,7 +470,7 @@ function(input, output, session) {
     # its own. Alpha keeps the bold value readable over the fill.
     .lo <- idx_rng[1]; .hi <- idx_rng[2]
     idx_bar_cell <- function(v) {
-      if (is.na(v)) return("")
+      if (is.na(v)) return("<span class='cell-na'>NA</span>")
       frac <- if (.hi > .lo) (v - .lo) / (.hi - .lo) else 1
       frac <- max(0, min(1, frac))
       w    <- round(8 + frac * 90)
@@ -480,8 +480,16 @@ function(input, output, session) {
       )
     }
     tab$Index <- vapply(tab$Index, idx_bar_cell, character(1))
-    # escape = FALSE renders the Index bars, so escape the free-text Name column
-    # ourselves (district/school names can contain & < >).
+    # Show a muted 'NA' for missing subject scores rather than a blank cell —
+    # some states (e.g. Connecticut) have little or no proficiency data on
+    # U.S. News. (Done here, as HTML, so the cells can be styled.)
+    fmt_na <- function(x) ifelse(is.na(x),
+      "<span class='cell-na'>NA</span>", formatC(x, format = "f", digits = 1))
+    tab$Read <- fmt_na(tab$Read)
+    tab$Math <- fmt_na(tab$Math)
+    tab$Sci  <- fmt_na(tab$Sci)
+    # escape = FALSE renders the Index bars / NA spans, so escape the free-text
+    # Name column ourselves (district/school names can contain & < >).
     tab$Name  <- htmltools::htmlEscape(tab$Name)
 
     DT::datatable(
@@ -505,7 +513,6 @@ function(input, output, session) {
         )
       )
     ) %>%
-      DT::formatRound(c("Read", "Math", "Sci"), digits = 1) %>%
       DT::formatStyle("#",    color = "#64748b", fontWeight = "700") %>%
       DT::formatStyle("Name", fontWeight = "600", color = "#0f172a")
   }, server = FALSE)
@@ -653,6 +660,34 @@ function(input, output, session) {
     leafletProxy("map") %>%
       fitBounds(DATA_BBOX$lng1, DATA_BBOX$lat1,
                 DATA_BBOX$lng2, DATA_BBOX$lat2)
+  })
+
+  # ---- "Back to {state}" button (only while drilled into a district/school) --
+  # Steps up exactly one level — to the focused state and all its districts —
+  # instead of resetting all the way out to every state. Rendered dynamically so
+  # it appears only when a district or school is selected (otherwise the regular
+  # "Reset view" is the right control).
+  output$back_to_state_ui <- renderUI({
+    # Stay hidden until the user has zoomed into / filtered to a SINGLE state...
+    in_state <- length(input$states) == 1 && input$states %in% all_states
+    # ...and then drilled into one of its districts or schools (so there's
+    # actually a level to step back up from).
+    drilled  <- ((input$district %||% "All districts") != "All districts") ||
+                ((input$school   %||% "All schools")   != "All schools")
+    if (!in_state || !drilled) return(NULL)
+    actionButton("back_to_state",
+      label = tagList(bsicons::bs_icon("arrow-90deg-up"),
+                      paste0("Back to ", input$states)),
+      class = "btn-modern btn-back-state", style = "width:100%")
+  })
+
+  observeEvent(input$back_to_state, {
+    log_evt("back_to_state", sprintf("step up to state level: %s", rank_state()))
+    # Clear the district/school but keep the state selected. The markers observer
+    # then refits the map to the state's schools (the state-level view), and the
+    # rankings panel climbs back to that state's district ranking.
+    updateSelectInput(session, "district", selected = "All districts")
+    updateSelectInput(session, "school",   selected = "All schools")
   })
 
   # ---- Collapse / expand the floating control panel -------------------------
@@ -891,6 +926,35 @@ function(input, output, session) {
     )
   }
 
+  # A compact school row shown in the expandable sub-list beneath the ACTIVE
+  # district. Clicking it selects that school (school_pick) which, because the
+  # school's district is already the active one, zooms the map straight to the
+  # school's location. The swatch + meta carry its proficiency index.
+  build_school_subitem <- function(name, idx, active) {
+    div(
+      class = paste("legend-item legend-item-school legend-subitem",
+                    if (active) "is-active" else ""),
+      `data-school` = name,
+      tabindex = "0", role = "button",
+      `aria-label` = sprintf("Zoom the map to %s", name),
+      onclick = sprintf(
+        "Shiny.setInputValue('school_pick', %s, {priority:'event'});",
+        jsonlite::toJSON(name, auto_unbox = TRUE)),
+      onkeydown = sprintf(
+        "if(event.key==='Enter'||event.key===' '){event.preventDefault();Shiny.setInputValue('school_pick', %s, {priority:'event'});}",
+        jsonlite::toJSON(name, auto_unbox = TRUE)),
+      title = sprintf("%s — click to zoom the map here", name),
+      div(class = "legend-item-swatch",
+          style = sprintf("background:%s;", unname(index_color(idx)))),
+      div(class = "legend-item-text",
+        span(class = "legend-item-name", name),
+        span(class = "legend-item-meta",
+             if (is.na(idx)) "No score" else sprintf("Index %.1f", idx))
+      ),
+      bsicons::bs_icon("geo-alt-fill", class = "legend-item-arrow")
+    )
+  }
+
   output$district_legend <- renderUI({
     query    <- tolower(input$legend_search %||% "")
     selected <- input$district %||% "All districts"
@@ -934,9 +998,34 @@ function(input, output, session) {
           span(class = "legend-group-count", nrow(rows))
         ),
         div(class = "legend-group-body",
-          lapply(seq_len(nrow(rows)), function(i)
-            build_legend_item(rows$district[i], rows$prof_index[i], rows$n_schools[i],
-                              is_active = (rows$district[i] == selected)))
+          lapply(seq_len(nrow(rows)), function(i) {
+            active <- rows$district[i] == selected
+            item   <- build_legend_item(rows$district[i], rows$prof_index[i],
+                                        rows$n_schools[i], is_active = active)
+            if (!active) return(item)
+            # Expand the active district into its schools (alphabetical). Picking
+            # one zooms the map to that school. Capped so a very large district
+            # stays responsive; the rest are reachable via the search box.
+            sdf <- schools[schools$state == st &
+                           schools$district == rows$district[i], ]
+            sdf <- sdf[order(sdf$school_name), ]
+            cap_sub <- 60L; n_sub <- nrow(sdf)
+            sdf_shown <- utils::head(sdf, cap_sub)
+            sel_school <- input$school %||% "All schools"
+            tagList(
+              item,
+              div(class = "legend-school-sub",
+                lapply(seq_len(nrow(sdf_shown)), function(j)
+                  build_school_subitem(sdf_shown$school_name[j],
+                                       sdf_shown$prof_index[j],
+                                       active = identical(sdf_shown$school_name[j], sel_school))),
+                if (n_sub > cap_sub)
+                  div(class = "legend-more-note",
+                      sprintf("Showing first %d of %d schools — use the search box above.",
+                              cap_sub, n_sub))
+              )
+            )
+          })
         )
       )
     }

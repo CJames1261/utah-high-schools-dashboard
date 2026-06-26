@@ -257,10 +257,13 @@ district_pal <- colorFactor(
 # range instead of bunching in the pale middle; the few extreme states clamp to
 # the end colors. A saturated red-yellow-green ramp keeps every band readable.
 INDEX_DOMAIN <- as.numeric(quantile(state_rankings$prof_index, c(0.10, 0.90), na.rm = TRUE))
-INDEX_COLORS <- c("#d73027", "#f46d43", "#fdae61", "#fee08b",
-                  "#a6d96a", "#66bd63", "#1a9850")
-# Colorblind-safe alternative (red -> blue) if you ever want it:
-# INDEX_COLORS <- c("#d73027", "#f46d43", "#fdae61", "#d1e5f0", "#67a9cf", "#2166ac")
+# High-drama ramp: near-black blood-red at the low end -> deep forest-green at
+# the high end, so the best/worst states & districts read as starkly different.
+INDEX_COLORS <- c("#67000d", "#a50026", "#d73027", "#f46d43", "#fee08b",
+                  "#66bd63", "#1a9850", "#006837", "#00441b")
+# Colorblind-safe alternative (dark red -> dark blue) if you ever want it:
+# INDEX_COLORS <- c("#67000d", "#a50026", "#d73027", "#f4a582", "#92c5de",
+#                   "#4393c3", "#2166ac", "#053061")
 index_pal <- colorNumeric(palette = INDEX_COLORS, domain = INDEX_DOMAIN,
                           na.color = "#cbd5e1")
 # colorNumeric returns na.color for values OUTSIDE its domain, and our domain is
