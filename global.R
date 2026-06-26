@@ -47,6 +47,15 @@ if (!file.exists(master_path))
 
 schools <- read_csv(master_path, show_col_types = FALSE, guess_max = Inf)
 
+# Per-school Proficiency Index = the average of its reading/math/science scores
+# (the three the app ranks on), NaN -> NA for schools with none reported. This
+# is what colors the school markers, and it rolls up into the district/state
+# averages used to color those polygons.
+schools$prof_index <- rowMeans(
+  cbind(schools$reading_proficiency, schools$math_proficiency,
+        schools$science_proficiency), na.rm = TRUE)
+schools$prof_index[is.nan(schools$prof_index)] <- NA
+
 # ---- Headline counts (surfaced in the navbar + scope block) ------------------
 # The same district name can appear in more than one state (e.g. a "Washington
 # County" district exists in several states), so districts are counted per
@@ -167,6 +176,27 @@ if (file.exists(poly_path)) {
           "to generate district areas. Showing school markers only for now.")
 }
 
+# Attach each district's Proficiency Index (avg reading/math/science across its
+# schools) so the polygons can be shaded by score rather than by state identity.
+if (nrow(district_polygons) > 0) {
+  .dist_idx <- schools %>%
+    dplyr::group_by(state, district) %>%
+    dplyr::summarise(
+      reading = mean(reading_proficiency, na.rm = TRUE),
+      math    = mean(math_proficiency,    na.rm = TRUE),
+      science = mean(science_proficiency, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      prof_index = rowMeans(cbind(reading, math, science), na.rm = TRUE),
+      prof_index = ifelse(is.nan(prof_index), NA, prof_index)
+    )
+  district_polygons$prof_index <- .dist_idx$prof_index[match(
+    paste(district_polygons$state, district_polygons$usnews_district),
+    paste(.dist_idx$state, .dist_idx$district))]
+  rm(.dist_idx)
+}
+
 # State outline polygons drive the DEFAULT view: one single-color shape per
 # state with a state-average hover card. The map only drills into the individual
 # district polygons above once a state is clicked or the state filter narrows to
@@ -185,6 +215,10 @@ if (file.exists(state_poly_path)) {
                               geometry = sf::st_sfc(crs = 4326))
 }
 message(sprintf("Loaded %d state outline polygon(s).", nrow(state_polygons)))
+
+# Attach each state's Proficiency Index so the choropleth shades by score.
+state_polygons$prof_index <- state_rankings$prof_index[
+  match(state_polygons$state, state_rankings$state)]
 
 # ---- Color palettes ----------------------------------------------------------
 # Primary map palette: one distinct color per STATE. At national scale (dozens
@@ -210,6 +244,48 @@ district_pal <- colorFactor(
   palette = district_colors,
   domain  = all_districts
 )
+
+# ---- Proficiency color scale (the MAIN map palette) --------------------------
+# States, districts, and school markers are all shaded by their Proficiency
+# Index on one continuous green-to-red scale: green = higher proficiency, red =
+# lower, light gray = no score reported. The domain spans the range of the state
+# indexes so the choropleth uses the full color range; districts/schools outside
+# that band clamp to the end colors. Kept as two constants so the whole look is
+# a one-line change — e.g. swap in the colorblind-safe (red->blue) alternative.
+# Domain is the middle 80% of state scores (10th-90th percentile) rather than
+# the raw min/max, so the clustered states spread across the FULL red->green
+# range instead of bunching in the pale middle; the few extreme states clamp to
+# the end colors. A saturated red-yellow-green ramp keeps every band readable.
+INDEX_DOMAIN <- as.numeric(quantile(state_rankings$prof_index, c(0.10, 0.90), na.rm = TRUE))
+INDEX_COLORS <- c("#d73027", "#f46d43", "#fdae61", "#fee08b",
+                  "#a6d96a", "#66bd63", "#1a9850")
+# Colorblind-safe alternative (red -> blue) if you ever want it:
+# INDEX_COLORS <- c("#d73027", "#f46d43", "#fdae61", "#d1e5f0", "#67a9cf", "#2166ac")
+index_pal <- colorNumeric(palette = INDEX_COLORS, domain = INDEX_DOMAIN,
+                          na.color = "#cbd5e1")
+# colorNumeric returns na.color for values OUTSIDE its domain, and our domain is
+# the 10th-90th percentile — so without this, the very best/worst states and
+# districts (beyond those percentiles) would render gray, as if they had no
+# data. Clamp every real value into the domain first so they take the darkest
+# green / red end colors; genuine NA still falls through to gray. Use this
+# everywhere the map, markers, table and legend swatches colour a score.
+index_color <- function(v)
+  index_pal(pmin(pmax(v, INDEX_DOMAIN[1]), INDEX_DOMAIN[2]))
+
+# Compact proficiency colour-scale legend for the RIGHT END of the KPI bar (same
+# green->red ramp as the map). Static, so built once here and injected by
+# output$kpi_cards in server.R. Lower scores read red, higher read green, with a
+# gray "no data" swatch — the key for the choropleth, polygons and markers.
+kpi_legend_html <- htmltools::HTML(sprintf(
+  "<div class='kpi-legend'>
+     <div class='kpi-legend-head'>%s<span>Proficiency</span></div>
+     <div class='kpi-legend-bar' style='background:linear-gradient(90deg,%s);'></div>
+     <div class='kpi-legend-scale'><span>Lower</span><span>Higher</span></div>
+     <div class='kpi-legend-foot'><span class='kpi-legend-na'></span>No data</div>
+   </div>",
+  as.character(bsicons::bs_icon("palette")),
+  paste(INDEX_COLORS, collapse = ", ")
+))
 
 # ---- Helpers -----------------------------------------------------------------
 fmt_pct  <- function(x) ifelse(is.na(x), "n/a", paste0(x, "%"))
@@ -272,7 +348,8 @@ school_popup <- function(row) {
 # every district x metric combination inside the loop below.
 hover_icons <- vapply(
   c("geo-alt-fill", "pencil-square", "patch-check-fill",
-    "calculator", "book", "lightbulb", "mortarboard-fill", "calendar3"),
+    "calculator", "book", "lightbulb", "mortarboard-fill", "calendar3",
+    "trophy-fill"),
   function(n) as.character(bsicons::bs_icon(n)),
   character(1)
 )
@@ -290,16 +367,29 @@ district_hover_stat <- function(icon, label, value) {
   )
 }
 
-# Full KPI scorecard card for one district (name + averaged scores).
-district_kpi_card <- function(name, avg) {
+# Full KPI scorecard card for one district or state (name + averaged scores +
+# its rank). `rank` is the entity's place in its ranking (a state among states,
+# or a district within its state) and `rank_total` how many ranked entities that
+# is out of; NA rank renders a muted "Not ranked" badge (no proficiency data).
+district_kpi_card <- function(name, avg, rank = NA_integer_, rank_total = NA_integer_) {
+  # Rank badge — shown in the card header so the hover always carries the same
+  # standing the rankings table does.
+  rank_pill <- if (is.na(rank)) {
+    "<span class='district-hover-rank district-hover-rank-na'>Not ranked</span>"
+  } else {
+    sprintf(
+      "<span class='district-hover-rank'>%sRank %d<span class='dh-rank-of'> of %d</span></span>",
+      hover_icons[["trophy-fill"]], rank, rank_total
+    )
+  }
   if (is.null(avg)) {
-    meta <- ""
+    meta <- rank_pill
     body <- "<div style='grid-column:1/-1; padding:14px; color:#64748b; font-size: 13px;'>No scorecard data for this district.</div>"
     foot <- ""
   } else {
     meta <- sprintf(
-      "<span class='data-year-pill'>%s%s</span><span class='district-hover-count'>Average of %d school%s</span>",
-      hover_icons[["calendar3"]], DATA_YEAR,
+      "%s<span class='data-year-pill'>%s%s</span><span class='district-hover-count'>Average of %d school%s</span>",
+      rank_pill, hover_icons[["calendar3"]], DATA_YEAR,
       avg$n, if (avg$n == 1) "" else "s"
     )
     vals <- c(
@@ -343,6 +433,25 @@ district_kpi_card <- function(name, avg) {
   ))
 }
 
+# ---- Rank lookups for the hover cards ----------------------------------------
+# State rank = its place in the national state ranking (state_rankings is already
+# sorted by Proficiency Index). District rank = its place WITHIN its own state,
+# computed exactly the way the drill-in rankings table does it
+# (compute_prof_ranking over that state's schools), so the number on the hover
+# card always matches the number in the table. Unranked entities (no proficiency
+# data) carry NA and render as "Not ranked".
+n_states_ranked <- sum(!is.na(state_rankings$rank))
+
+district_rank_tbl <- do.call(rbind, lapply(sort(unique(schools$state)), function(st) {
+  rk <- compute_prof_ranking(dplyr::filter(schools, state == st), "district")
+  data.frame(
+    key        = paste(st, rk$district),
+    rank       = rk$rank,
+    rank_total = sum(!is.na(rk$rank)),
+    stringsAsFactors = FALSE
+  )
+}))
+
 # One KPI card per polygon, in the same row order as district_polygons. Filter
 # by BOTH state and district so a district name that also exists in another
 # state only averages the schools that belong to this polygon's state.
@@ -350,7 +459,10 @@ polygon_hover_labels <- lapply(seq_len(nrow(district_polygons)), function(i) {
   st <- district_polygons$state[i]
   nm <- district_polygons$usnews_district[i]
   df <- schools[schools$state == st & schools$district == nm, ]
-  district_kpi_card(nm, compute_avg_scorecard(df))
+  m  <- match(paste(st, nm), district_rank_tbl$key)
+  district_kpi_card(nm, compute_avg_scorecard(df),
+                    rank       = district_rank_tbl$rank[m],
+                    rank_total = district_rank_tbl$rank_total[m])
 })
 
 # One KPI card per STATE (shown on the default state choropleth), averaging
@@ -359,7 +471,10 @@ polygon_hover_labels <- lapply(seq_len(nrow(district_polygons)), function(i) {
 state_hover_labels <- lapply(seq_len(nrow(state_polygons)), function(i) {
   st <- state_polygons$state[i]
   df <- schools[schools$state == st, ]
-  district_kpi_card(st, compute_avg_scorecard(df))
+  m  <- match(st, state_rankings$state)
+  district_kpi_card(st, compute_avg_scorecard(df),
+                    rank       = state_rankings$rank[m],
+                    rank_total = n_states_ranked)
 })
 
 # Default / reset map view. We frame the BULK of the schools (2nd-98th

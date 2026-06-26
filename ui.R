@@ -813,12 +813,41 @@ button:focus-visible,
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 
-/* KPI panel (top center) */
-.kpi-panel {
+/* Marker-cluster bubbles: neutral slate (NOT count-coloured) so colour on the
+   map only ever encodes proficiency. They just say 'N schools here, zoom in'. */
+.prof-cluster-wrap { background: transparent; }
+.prof-cluster {
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(71, 85, 105, 0.88);
+  color: #ffffff; font-family: 'Inter', sans-serif;
+  font-weight: 700; font-size: 13px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+
+/* KPI row (top center): the single metrics panel, whose right-most cell is the
+   proficiency colour-scale legend. Centered between the filters and rankings
+   panels; max-width keeps it from overlapping either. The metric cards shrink
+   (see .kpi-stat) so the legend always fits inside the centered panel. */
+.kpi-row {
   position: absolute;
-  top: 20px; left: 50%;
+  top: 20px;
+  left: 50%;
   transform: translateX(-50%);
+  max-width: calc(100% - 900px);
   z-index: 500;
+  display: flex;
+  align-items: stretch;
+  pointer-events: none;
+}
+.kpi-row > * { pointer-events: auto; }
+.kpi-panel {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
   background: var(--bg-glass);
   -webkit-backdrop-filter: blur(14px) saturate(180%);
   backdrop-filter: blur(14px) saturate(180%);
@@ -826,11 +855,6 @@ button:focus-visible,
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
-  /* Cap the floor at the available centre width so min-width can never exceed
-     max-width (which previously pinned the panel at 720px and overlapped the
-     control panel on ~1200-1400px screens). */
-  min-width: min(600px, calc(100% - 900px));
-  max-width: calc(100% - 900px);
   transition: box-shadow 0.2s ease;
 }
 .kpi-panel:hover { box-shadow: var(--shadow-xl); }
@@ -877,26 +901,27 @@ button:focus-visible,
   padding: 12px 4px;
 }
 .kpi-stat {
-  /* Each card sizes to its content first (min-width: max-content) and then
-     shares any remaining space with its siblings (flex: 1 1 auto). Cards
-     with longer labels (e.g. AP Passed) simply end up slightly wider. */
-  flex: 1 1 auto;
-  min-width: max-content;
-  padding: 4px 14px;
+  /* Cards share the panel width equally (flex: 1 1 0) and may shrink below
+     their content (min-width: 0) so the legend cell always fits inside the
+     centered bar; overflow:hidden keeps a long label from spilling. */
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 9px;
   border-right: 1px solid var(--border-color);
+  overflow: hidden;
 }
 .kpi-stat:last-child { border-right: 0; }
 .kpi-stat-head {
-  display: flex; align-items: center; gap: 5px;
+  display: flex; align-items: center; gap: 4px;
   flex-wrap: nowrap;            /* never break to a second row */
   color: var(--text-tertiary);
-  font-size: 12px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.02em;
   margin-bottom: 6px;
 }
-/* Keep the label text on one line regardless of card width. */
+/* Keep the label on one line; the card's overflow:hidden clips it at the edge. */
 .kpi-stat-head > span { white-space: nowrap; }
-.kpi-stat-head > svg { color: var(--color-primary); font-size: 12px; }
+.kpi-stat-head > svg { color: var(--color-primary); font-size: 11px; flex-shrink: 0; }
 
 /* Info icon — same brand blue as the metric icons, sits at the right edge of
    the stat header (margin-left:auto), and triggers a Bootstrap tooltip.
@@ -917,6 +942,57 @@ button:focus-visible,
   transform: scale(1.08);
 }
 .kpi-info svg { font-size: 12.5px; }
+
+/* Proficiency colour-scale legend — the right-most cell INSIDE the KPI bar (not
+   a separate card). The preceding Graduation cell's border-right separates it.
+   flex:0 0 auto so it keeps its width while the metrics flex. */
+.kpi-legend {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; justify-content: center;
+  gap: 4px;
+  padding: 4px 13px;
+  min-width: 104px;
+}
+.kpi-legend-head {
+  display: flex; align-items: center; gap: 4px;
+  color: var(--text-tertiary);
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.kpi-legend-head svg { color: var(--color-primary); font-size: 11px; }
+.kpi-legend-bar {
+  height: 10px; border-radius: 3px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+}
+.kpi-legend-scale {
+  display: flex; justify-content: space-between;
+  font-size: 10px; font-weight: 600; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.kpi-legend-foot {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 600; color: var(--text-tertiary);
+}
+.kpi-legend-na {
+  width: 11px; height: 11px; border-radius: 2px; display: inline-block;
+  background: #cbd5e1; border: 1px solid rgba(15, 23, 42, 0.12);
+}
+
+/* Index column in the rankings table: a proportional bar coloured per-row by
+   the same proficiency ramp as the map (the gradient is set inline per row).
+   background-image is set inline so these size/repeat/position rules still take
+   effect. */
+.state-rank-dt td .idx-bar {
+  background-repeat: no-repeat;
+  background-size: 100% 64%;
+  background-position: center;
+  border-radius: 3px;
+  padding: 2px 0;
+  font-weight: 700; color: #0f172a;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Tone down the default Bootstrap tooltip to match the app's look. */
 .tooltip-inner {
@@ -996,6 +1072,22 @@ button:focus-visible,
 .district-hover-count {
   font-size: 12px; color: #64748b; font-weight: 600;
   white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+/* Rank badge in the hover-card header (state rank, or a district's rank within
+   its state). Amber to read as a standing/achievement, matching the trophy in
+   the rankings panel; muted gray when the entity has no score to rank. */
+.district-hover-rank {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #fef3c7; color: #92400e;
+  font-size: 12px; font-weight: 700;
+  padding: 2px 9px; border-radius: 999px;
+  border: 1px solid #fde68a;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.district-hover-rank svg { font-size: 11px; flex-shrink: 0; }
+.district-hover-rank .dh-rank-of { font-weight: 600; opacity: 0.72; }
+.district-hover-rank-na {
+  background: #f1f5f9; color: #64748b; border-color: #e2e8f0;
 }
 .district-hover-body {
   display: grid;
@@ -1791,10 +1883,14 @@ table.dataTable tbody tr:hover { background: var(--color-primary-tint) !importan
 .dataTables_wrapper .dataTables_paginate { font-size: 13px !important; }
 
 /* Responsive (map) */
+/* Responsive (map) */
+@media (max-width: 1320px) {
+  /* Below this the centered bar gets tight, so hide the colour legend and give
+     the metric cards their room back. */
+  .kpi-legend { display: none; }
+}
 @media (max-width: 1180px) {
-  .kpi-panel { min-width: 0; max-width: calc(100% - 380px); }
   .kpi-stat-value { font-size: 19px; }
-  .kpi-stat { padding: 4px 10px; min-width: 80px; }
 }
 @media (max-width: 880px) {
   .kpi-panel-body { flex-wrap: wrap; }
@@ -1802,9 +1898,9 @@ table.dataTable tbody tr:hover { background: var(--color-primary-tint) !importan
 }
 @media (max-width: 760px) {
   .control-panel { width: calc(100vw - 32px); top: 16px; left: 16px; }
-  .kpi-panel {
+  .kpi-row {
     top: auto; bottom: 56px; left: 16px; right: 16px;
-    transform: none; max-width: none; min-width: 0;
+    transform: none; max-width: none;
   }
   .detail-panel { display: none; }
 }
@@ -2739,9 +2835,12 @@ bslib::page_navbar(
     div(class = "map-shell",
       leafletOutput("map", width = "100%", height = "100%"),
 
-      # KPI panel
-      div(class = "kpi-panel", id = "kpi_panel",
-        uiOutput("kpi_cards")
+      # KPI row: a single metrics panel whose right-most cell is the proficiency
+      # colour-scale legend (added inside kpi_cards' body, server.R).
+      div(class = "kpi-row",
+        div(class = "kpi-panel", id = "kpi_panel",
+          uiOutput("kpi_cards")
+        )
       ),
 
       # Control panel

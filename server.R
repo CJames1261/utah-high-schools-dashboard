@@ -111,6 +111,8 @@ function(input, output, session) {
   # by the observer below so the map shows only the selected states' areas.
   output$map <- renderLeaflet({
     log_evt("renderLeaflet", "building base map (tiles only; polygons via proxy)")
+    # The proficiency colour-scale legend lives in the KPI bar (see
+    # kpi_legend_html / output$kpi_cards), not as a map control.
     leaflet() %>%
       addProviderTiles(providers$CartoDB.Positron) %>%
       fitBounds(DATA_BBOX$lng1, DATA_BBOX$lat1,
@@ -140,7 +142,7 @@ function(input, output, session) {
       if (nrow(state_polygons) == 0) return()
       proxy %>% addPolygons(
         data        = state_polygons,
-        fillColor   = ~state_pal(state),
+        fillColor   = ~index_color(prof_index),
         fillOpacity = 0.30,
         color       = "#333",
         weight      = 1.2,
@@ -164,7 +166,7 @@ function(input, output, session) {
       polys$poly_id <- paste(polys$state, polys$usnews_district, sep = " || ")
       proxy %>% addPolygons(
         data        = polys,
-        fillColor   = ~state_pal(state),
+        fillColor   = ~index_color(prof_index),
         fillOpacity = 0.35,
         color       = "#333",
         weight      = 1,
@@ -241,7 +243,7 @@ function(input, output, session) {
       lng         = df$longitude,
       lat         = df$latitude,
       radius      = 7,
-      fillColor   = unname(state_pal(df$state)),
+      fillColor   = unname(index_color(df$prof_index)),
       color       = "#222",
       weight      = 1,
       fillOpacity = 0.95,
@@ -264,7 +266,21 @@ function(input, output, session) {
       clusterOptions = markerClusterOptions(
         showCoverageOnHover = FALSE,
         spiderfyOnMaxZoom   = TRUE,
-        maxClusterRadius    = 45
+        maxClusterRadius    = 45,
+        # Neutral slate cluster bubbles. Leaflet's default colours clusters
+        # green/yellow/red BY COUNT, which would collide with the proficiency
+        # colour scale (red = low score). Make clusters a single neutral colour
+        # so colour on the map only ever means proficiency; the bubble just says
+        # "N schools here, zoom in".
+        iconCreateFunction = htmlwidgets::JS(
+          "function(cluster) {",
+          "  var n = cluster.getChildCount();",
+          "  return new L.DivIcon({",
+          "    html: '<div class=\"prof-cluster\">' + n + '</div>',",
+          "    className: 'prof-cluster-wrap',",
+          "    iconSize: new L.Point(40, 40)",
+          "  });",
+          "}")
       )
     )
 
@@ -446,9 +462,32 @@ function(input, output, session) {
     )
     tab <- rbind(summary_row, ranked)
 
+    # Render the Index column as a proportional bar whose COLOUR follows the
+    # map's proficiency scale (index_pal — same global domain as the choropleth,
+    # district polygons and school markers) and whose WIDTH is proportional
+    # within the current view's range. Built as HTML because DT::styleColorBar
+    # allows only a single colour for the whole column; here every row carries
+    # its own. Alpha keeps the bold value readable over the fill.
+    .lo <- idx_rng[1]; .hi <- idx_rng[2]
+    idx_bar_cell <- function(v) {
+      if (is.na(v)) return("")
+      frac <- if (.hi > .lo) (v - .lo) / (.hi - .lo) else 1
+      frac <- max(0, min(1, frac))
+      w    <- round(8 + frac * 90)
+      sprintf(
+        "<div class='idx-bar' style='background-image:linear-gradient(90deg,%sB3 %d%%,transparent %d%%);'>%s</div>",
+        index_color(v), w, w, formatC(v, format = "f", digits = 1)
+      )
+    }
+    tab$Index <- vapply(tab$Index, idx_bar_cell, character(1))
+    # escape = FALSE renders the Index bars, so escape the free-text Name column
+    # ourselves (district/school names can contain & < >).
+    tab$Name  <- htmltools::htmlEscape(tab$Name)
+
     DT::datatable(
       tab,
       rownames  = FALSE,
+      escape    = FALSE,
       colnames  = c("#", rd$name_header, "Read", "Math", "Sci", "Index"),
       selection = "single",
       class     = "compact stripe hover row-border state-rank-dt",
@@ -466,17 +505,9 @@ function(input, output, session) {
         )
       )
     ) %>%
-      DT::formatRound(c("Read", "Math", "Sci", "Index"), digits = 1) %>%
+      DT::formatRound(c("Read", "Math", "Sci"), digits = 1) %>%
       DT::formatStyle("#",    color = "#64748b", fontWeight = "700") %>%
-      DT::formatStyle("Name", fontWeight = "600", color = "#0f172a") %>%
-      DT::formatStyle(
-        "Index",
-        fontWeight = "700", color = "#0f172a",
-        background = DT::styleColorBar(idx_rng, "#bfdbfe"),
-        backgroundSize     = "98% 62%",
-        backgroundRepeat   = "no-repeat",
-        backgroundPosition = "center"
-      )
+      DT::formatStyle("Name", fontWeight = "600", color = "#0f172a")
   }, server = FALSE)
 
   # Breadcrumb header — All States > {State} > {District}; earlier crumbs are
@@ -740,7 +771,9 @@ function(input, output, session) {
         kpi_stat("calculator",       "Math",       fmt_avg(avg$math),       kpi_tooltips$math),
         kpi_stat("book",             "Reading",    fmt_avg(avg$reading),    kpi_tooltips$reading),
         kpi_stat("lightbulb",        "Science",    fmt_avg(avg$science),    kpi_tooltips$science),
-        kpi_stat("mortarboard-fill", "Graduation", fmt_avg(avg$graduation), kpi_tooltips$graduation)
+        kpi_stat("mortarboard-fill", "Graduation", fmt_avg(avg$graduation), kpi_tooltips$graduation),
+        # Proficiency colour-scale legend, as the right-most cell of the KPI bar.
+        kpi_legend_html
       )
     )
   })
@@ -786,9 +819,22 @@ function(input, output, session) {
   # =========================================================================
   # Counted per (state, district) so same-named districts in different states
   # stay distinct.
-  district_counts <- schools %>% count(state, district, name = "n_schools")
+  district_counts <- schools %>%
+    dplyr::group_by(state, district) %>%
+    dplyr::summarise(
+      n_schools = dplyr::n(),
+      .r = mean(reading_proficiency, na.rm = TRUE),
+      .m = mean(math_proficiency,    na.rm = TRUE),
+      .s = mean(science_proficiency, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      prof_index = rowMeans(cbind(.r, .m, .s), na.rm = TRUE),
+      prof_index = ifelse(is.nan(prof_index), NA, prof_index)
+    ) %>%
+    dplyr::select(state, district, n_schools, prof_index)
 
-  build_legend_item <- function(name, state, count, is_active) {
+  build_legend_item <- function(name, idx, count, is_active) {
     div(
       class       = paste("legend-item", if (is_active) "is-active" else ""),
       `data-district` = name,
@@ -806,7 +852,7 @@ function(input, output, session) {
       title       = sprintf("%s — %d school%s",
                             name, count, if (count == 1) "" else "s"),
       div(class = "legend-item-swatch",
-          style = sprintf("background:%s;", unname(state_pal(state)))),
+          style = sprintf("background:%s;", unname(index_color(idx)))),
       div(class = "legend-item-text",
         span(class = "legend-item-name", name),
         span(class = "legend-item-meta",
@@ -817,9 +863,9 @@ function(input, output, session) {
   }
 
   # A search-result row for an individual school (vs a district row above).
-  # Clicking it sets input$school_pick; the swatch uses the school's state color
-  # and the meta line shows which district it belongs to.
-  build_school_item <- function(name, district, state) {
+  # Clicking it sets input$school_pick; the swatch uses the school's proficiency
+  # color and the meta line shows which district it belongs to.
+  build_school_item <- function(name, district, idx) {
     div(
       class           = "legend-item legend-item-school",
       `data-school`   = name,
@@ -836,7 +882,7 @@ function(input, output, session) {
       ),
       title           = sprintf("%s — %s", name, district),
       div(class = "legend-item-swatch",
-          style = sprintf("background:%s;", unname(state_pal(state)))),
+          style = sprintf("background:%s;", unname(index_color(idx)))),
       div(class = "legend-item-text",
         span(class = "legend-item-name", name),
         span(class = "legend-item-meta", district)
@@ -859,11 +905,11 @@ function(input, output, session) {
 
     # Individual schools surface only while searching (scoped to the selected
     # states), so the default view stays a clean district list.
-    school_hits <- schools[0, c("school_name", "district", "state")]
+    school_hits <- schools[0, c("school_name", "district", "prof_index")]
     if (nzchar(query)) {
       sh <- schools[schools$state %in% sel_states &
                     grepl(query, tolower(schools$school_name), fixed = TRUE), ]
-      school_hits <- sh[order(sh$school_name), c("school_name", "district", "state")]
+      school_hits <- sh[order(sh$school_name), c("school_name", "district", "prof_index")]
     }
 
     if (nrow(dc) == 0 && nrow(school_hits) == 0) {
@@ -889,7 +935,7 @@ function(input, output, session) {
         ),
         div(class = "legend-group-body",
           lapply(seq_len(nrow(rows)), function(i)
-            build_legend_item(rows$district[i], rows$state[i], rows$n_schools[i],
+            build_legend_item(rows$district[i], rows$prof_index[i], rows$n_schools[i],
                               is_active = (rows$district[i] == selected)))
         )
       )
@@ -908,7 +954,7 @@ function(input, output, session) {
         ),
         div(class = "legend-group-body",
           lapply(seq_len(nrow(shown)), function(i)
-            build_school_item(shown$school_name[i], shown$district[i], shown$state[i]))
+            build_school_item(shown$school_name[i], shown$district[i], shown$prof_index[i]))
         ),
         if (nrow(school_hits) > cap_s)
           div(class = "legend-more-note",
