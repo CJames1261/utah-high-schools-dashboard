@@ -59,6 +59,38 @@ html, body {
 }
 
 /* ============================================================
+   LOADING OVERLAY — covers the app until the map's tiles render.
+   Visible by default (in the initial HTML), hidden by the leaflet
+   onRender hook once the basemap has loaded.
+   ============================================================ */
+.app-loading {
+  position: fixed; inset: 0; z-index: 2147483000;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 38%, #ffffff 0%, #eaf0f7 100%);
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+}
+.app-loading.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.app-loading-card { text-align: center; padding: 24px; }
+.app-loading-spinner {
+  width: 58px; height: 58px; margin: 0 auto 20px;
+  border: 5px solid rgba(37, 99, 235, 0.16);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: app-spin 0.85s linear infinite;
+}
+@keyframes app-spin { to { transform: rotate(360deg); } }
+.app-loading-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 18px; font-weight: 700; color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.app-loading-sub {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px; font-weight: 500; color: var(--text-tertiary);
+  margin-top: 5px;
+}
+
+/* ============================================================
    KEYBOARD FOCUS (WCAG 2.4.7) — one shared focus-visible ring
    for every interactive control. Previously only the legend
    search input had any :focus styling, so keyboard/switch users
@@ -2860,6 +2892,15 @@ bslib::page_navbar(
     ),
     tags$style(HTML(app_css)),
     shinyjs::useShinyjs(),
+    # Full-screen loading overlay — sits in the initial HTML so it shows
+    # immediately, and the map's leaflet onRender hook fades it once the
+    # basemap tiles have loaded (see app_map_onrender_js in global.R).
+    tags$div(id = "app-loading", class = "app-loading",
+      tags$div(class = "app-loading-card",
+        tags$div(class = "app-loading-spinner"),
+        tags$div(class = "app-loading-title", "Loading Application ..."),
+      )
+    ),
     # Onboarding overlay + handler script. Position:fixed in CSS, so the
     # DOM placement is irrelevant; injecting in the header keeps it loaded
     # before the first paint so the auto-show timer can fire immediately.

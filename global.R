@@ -290,6 +290,34 @@ kpi_legend_html <- htmltools::HTML(sprintf(
   paste(INDEX_COLORS, collapse = ", ")
 ))
 
+# JS attached to the base map (via htmlwidgets::onRender in server.R). Fades out
+# the #app-loading overlay once the basemap's tiles have actually finished
+# loading (Leaflet's TileLayer 'load' event) — with a 4s post-ready safety net
+# and a 12s hard fallback so the overlay can never get stuck.
+app_map_onrender_js <- "
+function(el, x) {
+  var map = this; var hidden = false;
+  function done() {
+    if (hidden) return; hidden = true;
+    var ov = document.getElementById('app-loading');
+    if (ov) {
+      ov.classList.add('is-hidden');
+      setTimeout(function(){ if (ov) ov.style.display = 'none'; }, 600);
+    }
+  }
+  map.whenReady(function() {
+    var hooked = false;
+    map.eachLayer(function(layer) {
+      if (!hooked && layer instanceof L.TileLayer) {
+        hooked = true;
+        layer.on('load', function(){ setTimeout(done, 350); });
+      }
+    });
+    setTimeout(done, 4000);
+  });
+  setTimeout(done, 12000);
+}"
+
 # ---- Helpers -----------------------------------------------------------------
 fmt_pct  <- function(x) ifelse(is.na(x), "n/a", paste0(x, "%"))
 fmt_avg  <- function(x) if (is.na(x) || is.nan(x)) "n/a" else sprintf("%.1f%%", x)

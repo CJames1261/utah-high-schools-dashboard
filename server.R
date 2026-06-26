@@ -116,7 +116,9 @@ function(input, output, session) {
     leaflet() %>%
       addProviderTiles(providers$CartoDB.Positron) %>%
       fitBounds(DATA_BBOX$lng1, DATA_BBOX$lat1,
-                DATA_BBOX$lng2, DATA_BBOX$lat2)
+                DATA_BBOX$lng2, DATA_BBOX$lat2) %>%
+      # Dismiss the full-screen loading overlay once the basemap tiles render.
+      htmlwidgets::onRender(app_map_onrender_js)
   })
 
   # ---- Draw the map's polygon layer (two zoom levels) -----------------------
